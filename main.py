@@ -1,110 +1,111 @@
-import telebot
-from telebot import types
-import time
+import asyncio
 import random
+from aiogram import Bot, Dispatcher, types, F
+from aiogram.filters import Command
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 
-# ТВОЙ ТОКЕН
+# === НАСТРОЙКИ ===
 TOKEN = "8359920618:AAFpuDjkXwbArbuC3VtaevWMIYXuBamvSt0"
-bot = telebot.TeleBot(TOKEN)
+WEB_APP_URL = "https://твой-сайт.vercel.app"  # Замени на свою ссылку
 
-# База данных в оперативной памяти
-users = {}
+bot = Bot(token=TOKEN)
+dp = Dispatcher()
 
-def get_user(uid, name):
-    if uid not in users:
-        users[uid] = {"balance": 5000, "name": name}
-    return users[uid]
+# Временное хранилище игр (в реальном боте лучше использовать БД)
+games = {}
 
-# ГЛАВНОЕ МЕНЮ (Только Inline-кнопки под сообщением)
-def main_inline_menu():
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    markup.add(
-        types.InlineKeyboardButton("🎰 Игры", callback_data="menu_games"),
-        types.InlineKeyboardButton("👤 Профиль", callback_data="menu_profile"),
-        types.InlineKeyboardButton("💣 Бомба", callback_data="menu_bomb"),
-        types.InlineKeyboardButton("🎁 Бонус", callback_data="menu_bonus"),
-        types.InlineKeyboardButton("⚙️ Настройки", callback_data="menu_dev"),
-        types.InlineKeyboardButton("🆘 Помощь", callback_data="menu_dev")
+def get_main_menu(balance=182, bet=10):
+    text = (
+        "🎮 **ДАВАЙ НАЧНЕМ ИГРАТЬ!**\n\n"
+        f"💰 **Баланс:** {balance} m₽\n"
+        f"💸 **Ставка:** {bet} m₽\n\n"
+        "👇 *Выбери игру и начинай!*"
     )
-    return markup
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=e, callback_data="none") for e in ["🏀", "⚽", "🎯", "🎳", "🎲", "🎰"]],
+        [
+            InlineKeyboardButton(text="🚀 Быстрые", callback_data="none"),
+            InlineKeyboardButton(text="Режимы 💣", callback_data="start_mines")
+        ],
+        [InlineKeyboardButton(text="🕹 Играть в WEB", web_app=WebAppInfo(url=WEB_APP_URL))],
+        [InlineKeyboardButton(text="✏️ Изменить ставку", callback_data="none")]
+    ])
+    return text, kb
 
-@bot.message_handler(commands=['start'])
-def start(message):
-    get_user(message.from_user.id, message.from_user.first_name)
-    bot.send_message(message.chat.id, "💎 **ДОБРО ПОЖАЛОВАТЬ!**\nВыбирай раздел на кнопках ниже:", 
-                     reply_markup=main_inline_menu(), parse_mode="Markdown")
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith("menu_"))
-def handle_menu(call):
-    u = get_user(call.from_user.id, call.from_user.first_name)
+def get_mines_kb(user_id):
+    game = games[user_id]
+    grid = game['grid']
+    kb_buttons = []
     
-    if call.data == "menu_profile":
-        text = f"👤 **ПРОФИЛЬ**\n\n💰 Баланс: {u['balance']} золота\n🆔 ID: `{call.from_user.id}`"
-        bot.edit_message_text(text, call.message.chat.id, call.message.id, reply_markup=main_inline_menu(), parse_mode="Markdown")
+    for i in range(0, 25, 5):
+        row = []
+        for j in range(i, i + 5):
+            btn_text = "❓"
+            if j in game['opened']:
+                btn_text = "💎"
+            row.append(InlineKeyboardButton(text=btn_text, callback_data=f"cell_{j}"))
+        kb_buttons.append(row)
     
-    elif call.data == "menu_games":
-        markup = types.InlineKeyboardMarkup(row_width=2)
-        markup.add(
-            types.InlineKeyboardButton("🏀 Баскетбол", callback_data="g_basketball"),
-            types.InlineKeyboardButton("⚽️ Футбол", callback_data="g_football"),
-            types.InlineKeyboardButton("🎯 Дартс", callback_data="g_darts"),
-            types.InlineKeyboardButton("🎲 Кубик", callback_data="g_dice"),
-            types.InlineKeyboardButton("⬅️ Назад", callback_data="menu_back")
-        )
-        bot.edit_message_text("🕹 **ВЫБЕРИ ИГРУ:**\n_(Ставка: 500 золота)_", call.message.chat.id, call.message.id, reply_markup=markup, parse_mode="Markdown")
+    kb_buttons.append([InlineKeyboardButton(text=f"Забрать выигрыш ✅ ({game['win']} m₽)", callback_data="cashout")])
+    return InlineKeyboardMarkup(inline_keyboard=kb_buttons)
 
-    elif call.data == "menu_bomb":
-        markup = types.InlineKeyboardMarkup(row_width=2)
-        btns = [types.InlineKeyboardButton(f"📦 {i}", callback_data=f"bomb_{i}") for i in range(1, 5)]
-        markup.add(*btns, types.InlineKeyboardButton("⬅️ Назад", callback_data="menu_back"))
-        bot.edit_message_text("💣 **РЕЖИМ БОМБА**\nУгадай пустую коробку:", call.message.chat.id, call.message.id, reply_markup=markup, parse_mode="Markdown")
+@dp.message(Command("start", "play"))
+async def cmd_start(message: types.Message):
+    text, kb = get_main_menu()
+    await message.answer(text, reply_markup=kb, parse_mode="Markdown")
 
-    elif call.data == "menu_bonus":
-        u['balance'] += 1000
-        bot.answer_callback_query(call.id, "🎁 +1000 золота получено!", show_alert=True)
-        bot.edit_message_text(f"💎 Баланс пополнен! Теперь у тебя {u['balance']} 💰", call.message.chat.id, call.message.id, reply_markup=main_inline_menu())
+@dp.callback_query(F.data == "start_mines")
+async def start_mines(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    # Генерируем 3 случайные бомбы
+    mines_pos = random.sample(range(25), 3)
+    games[user_id] = {
+        'mines': mines_pos,
+        'opened': [],
+        'win': 10, # Начальный выигрыш равен ставке
+        'active': True
+    }
+    await callback.message.edit_text("💣 **ИГРА НАЧАЛАСЬ!**\nНайди все кристаллы и не подорвись!", 
+                                     reply_markup=get_mines_kb(user_id), parse_mode="Markdown")
 
-    elif call.data == "menu_back":
-        bot.edit_message_text("💎 **ГЛАВНОЕ МЕНЮ:**", call.message.chat.id, call.message.id, reply_markup=main_inline_menu())
+@dp.callback_query(F.data.startswith("cell_"))
+async def click_cell(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    if user_id not in games or not games[user_id]['active']: return
 
-    elif call.data == "menu_dev":
-        bot.answer_callback_query(call.id, "🛠 Этот раздел в разработке...", show_alert=True)
+    cell_idx = int(callback.data.split("_")[1])
+    game = games[user_id]
 
-# ЛОГИКА ИГР (Мячи, Дартс и т.д.)
-@bot.callback_query_handler(func=lambda call: call.data.startswith("g_"))
-def play_game(call):
-    u = get_user(call.from_user.id, call.from_user.first_name)
-    if u['balance'] < 500:
-        bot.answer_callback_query(call.id, "❌ Недостаточно золота!", show_alert=True)
-        return
+    if cell_idx in game['opened']: return
 
-    u['balance'] -= 500
-    game = call.data.split("_")[1]
-    emoji_map = {"basketball": "🏀", "football": "⚽", "darts": "🎯", "dice": "🎲"}
-    
-    # Отправляем анимацию
-    msg = bot.send_dice(call.message.chat.id, emoji=emoji_map[game])
-    time.sleep(4) # Ждем анимацию
-
-    # Если значение больше 3 — ты выиграл
-    if msg.dice.value >= 3:
-        u['balance'] += 1200
-        bot.send_message(call.message.chat.id, f"✅ **ПОБЕДА!**\nВыигрыш: 1200 💰\nБаланс: {u['balance']}", reply_markup=main_inline_menu())
+    if cell_idx in game['mines']:
+        # ПРОИГРЫШ
+        game['active'] = False
+        await callback.message.edit_text("💥 **БОМБА!** Ты проиграл свою ставку.", reply_markup=None)
+        await asyncio.sleep(2)
+        text, kb = get_main_menu()
+        await callback.message.answer(text, reply_markup=kb, parse_mode="Markdown")
     else:
-        bot.send_message(call.message.chat.id, f"❌ **ПРОИГРЫШ!**\nБаланс: {u['balance']}", reply_markup=main_inline_menu())
+        # УГАДАЛ - УДВАИВАЕМ (x1.5 для баланса или x2)
+        game['opened'].append(cell_idx)
+        game['win'] = int(game['win'] * 2) 
+        await callback.message.edit_reply_markup(reply_markup=get_mines_kb(user_id))
 
-# ЛОГИКА БОМБЫ
-@bot.callback_query_handler(func=lambda call: call.data.startswith("bomb_"))
-def bomb_logic(call):
-    u = get_user(call.from_user.id, call.from_user.first_name)
-    if u['balance'] < 500: return
+@dp.callback_query(F.data == "cashout")
+async def cashout(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    if user_id not in games or not games[user_id]['active']: return
+    
+    win_amount = games[user_id]['win']
+    games[user_id]['active'] = False
+    
+    await callback.answer(f"Поздравляем! Вы забрали {win_amount} m₽", show_alert=True)
+    text, kb = get_main_menu(balance=182 + win_amount) # Условно прибавляем к балансу
+    await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
 
-    if random.choice([True, False, True]): # Шанс выигрыша чуть выше 50%
-        u['balance'] += 1000
-        bot.edit_message_text(f"💎 **ПУСТО!**\nТы забрал 1000 золота.\nБаланс: {u['balance']}", call.message.chat.id, call.message.id, reply_markup=main_inline_menu())
-    else:
-        u['balance'] -= 500
-        bot.edit_message_text(f"💥 **БАБАХ! БОМБА!**\nБаланс: {u['balance']}", call.message.chat.id, call.message.id, reply_markup=main_inline_menu())
+async def main():
+    print("Бот запущен!")
+    await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    bot.infinity_polling()
+    asyncio.run(main())
