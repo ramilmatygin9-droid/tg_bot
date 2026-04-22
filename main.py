@@ -1,6 +1,5 @@
 import asyncio
 import random
-import math
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
@@ -11,179 +10,149 @@ WEB_APP_URL = "https://твой-сайт.vercel.app"
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# База данных игр
-user_games = {}
+# База данных в памяти (для теста)
+user_data = {}
 
-# --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
+def get_user(uid):
+    if uid not in user_data:
+        user_data[uid] = {'bal': 1000, 'bet': 10, 'game': None}
+    return user_data[uid]
 
-def calculate_multiplier(mines, opened):
-    # Упрощенная формула множителя для имитации
-    # В реальных минах: С(всего-мины, открыто) / С(всего, открыто)
-    total_cells = 25
-    safe_cells = total_cells - mines
-    if opened == 0: return 1.0
-    
-    mult = 1.0
-    for i in range(opened):
-        mult *= (total_cells - i) / (safe_cells - i)
-    return round(mult, 2)
-
-def get_next_mults(mines, opened):
-    res = []
-    for i in range(1, 6):
-        res.append(f"x{calculate_multiplier(mines, opened + i)}")
-    return " ➡ ".join(res)
-
-# --- КЛАВИАТУРЫ ---
-
-def main_menu_kb(balance=182, bet=10):
+def get_main_menu(uid):
+    user = get_user(uid)
     text = (
         "🎮 **ДАВАЙ НАЧНЕМ ИГРАТЬ!**\n\n"
-        f"💰 **Баланс:** {balance} m₽\n"
-        f"💸 **Ставка:** {bet} m₽\n\n"
+        f"💰 **Баланс:** {user['bal']} m₽\n"
+        f"💸 **Ставка:** {user['bet']} m₽\n\n"
         "👇 *Выбери игру и начинай!*"
     )
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💣 Мины", callback_data="setup_mines"), 
-         InlineKeyboardButton(text="Алмазы 💎", callback_data="dev")],
-        [InlineKeyboardButton(text="🏰 Башня", callback_data="dev"), 
-         InlineKeyboardButton(text="Золото ⚜", callback_data="dev")],
+        [InlineKeyboardButton(text=e, callback_data=f"dice_{e}") for e in ["🏀", "⚽", "🎯", "🎳", "🎲", "🎰"]],
+        [
+            InlineKeyboardButton(text="🚀 Кейсы", callback_data="tab_cases"),
+            InlineKeyboardButton(text="Режимы 💣", callback_data="mines_settings")
+        ],
         [InlineKeyboardButton(text="🕹 Играть в WEB", web_app=WebAppInfo(url=WEB_APP_URL))],
-        [InlineKeyboardButton(text="🚀 Быстрые", callback_data="dev")]
+        [InlineKeyboardButton(text="✏️ Изменить ставку", callback_data="ch_bet")]
     ])
     return text, kb
 
-def mines_setup_kb():
-    # Клавиатура выбора количества мин (как на скрине 1)
+# --- РАЗДЕЛ: МИНЫ (НАСТРОЙКИ И ИГРА) ---
+
+@dp.callback_query(F.data == "mines_settings")
+async def mines_sets(callback: types.CallbackQuery):
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="2 Мины (Поле 3x3)", callback_data="st_mines_2")],
+        [InlineKeyboardButton(text="10 Мин (Поле 5x5)", callback_data="st_mines_10")],
+        [InlineKeyboardButton(text="20 Мин (Поле 7x7)", callback_data="st_mines_20")],
+        [InlineKeyboardButton(text="« Назад", callback_data="to_main")]
+    ])
+    await callback.message.edit_text("💣 **ВЫБЕРИ СЛОЖНОСТЬ:**\nЧем больше мин, тем выше множитель!", reply_markup=kb)
+
+def get_mines_kb(uid):
+    game = user_data[uid]['game']
+    size = game['size']
     btns = []
-    row = []
-    for i in range(1, 7):
-        row.append(InlineKeyboardButton(text=str(i), callback_data=f"start_with_{i}"))
-        if i % 3 == 0:
-            btns.append(row)
-            row = []
-    btns.append([InlineKeyboardButton(text="⬅ назад", callback_data="to_main")])
+    for i in range(0, size*size, size):
+        row = [InlineKeyboardButton(text="💎" if j in game['open'] else "❓", callback_data=f"m_{j}") for j in range(i, i+size)]
+        btns.append(row)
+    btns.append([InlineKeyboardButton(text=f"✅ ЗАБРАТЬ {game['cur_win']} m₽", callback_data="m_cash")])
     return InlineKeyboardMarkup(inline_keyboard=btns)
 
-def get_game_kb(user_id):
-    game = user_games[user_id]
-    kb = []
-    for i in range(0, 25, 5):
-        row = []
-        for j in range(i, i + 5):
-            if j in game['opened']:
-                row.append(InlineKeyboardButton(text="💎", callback_data="none"))
-            elif not game['active'] and j in game['mines']:
-                row.append(InlineKeyboardButton(text="💣", callback_data="none"))
-            else:
-                row.append(InlineKeyboardButton(text="❓", callback_data=f"hit_{j}"))
-        kb.append(row)
+@dp.callback_query(F.data.startswith("st_mines_"))
+async def start_m(callback: types.CallbackQuery):
+    uid = callback.from_user.id
+    user = get_user(uid)
+    m_count = int(callback.data.split("_")[2])
     
-    if game['active']:
-        kb.append([InlineKeyboardButton(text="Забрать выигрыш ✅", callback_data="cashout")])
-    else:
-        kb.append([InlineKeyboardButton(text="🔄 Повторить", callback_data="setup_mines"),
-                   InlineKeyboardButton(text="⬅ назад", callback_data="to_main")])
-    return InlineKeyboardMarkup(inline_keyboard=kb)
-
-# --- ОБРАБОТЧИКИ ---
-
-@dp.message(Command("start", "play"))
-async def cmd_start(message: types.Message):
-    text, kb = main_menu_kb()
-    await message.answer(text, reply_markup=kb, parse_mode="Markdown")
-
-@dp.callback_query(F.data == "setup_mines")
-async def setup_mines(callback: types.CallbackQuery):
-    await callback.message.edit_text(
-        "💣 **Мины · выбери мины!**\n"
-        "........................\n"
-        "💸 **Ставка:** 10 m₽",
-        reply_markup=mines_setup_kb(), parse_mode="Markdown"
-    )
-
-@dp.callback_query(F.data.startswith("start_with_"))
-async def start_game(callback: types.CallbackQuery):
-    user_id = callback.from_user.id
-    mines_count = int(callback.data.split("_")[-1])
+    if user['bal'] < user['bet']: return await callback.answer("Мало денег!")
     
-    user_games[user_id] = {
-        'mines_count': mines_count,
-        'mines': random.sample(range(25), mines_count),
-        'opened': [],
-        'bet': 10,
-        'active': True
+    size = 3 if m_count == 2 else (7 if m_count == 20 else 5)
+    user['bal'] -= user['bet']
+    user['game'] = {
+        'mines': random.sample(range(size*size), m_count),
+        'open': [],
+        'size': size,
+        'm_count': m_count,
+        'cur_win': user['bet'],
+        'step': 0
     }
-    
-    game = user_games[user_id]
-    mult = calculate_multiplier(mines_count, 0)
-    next_m = get_next_mults(mines_count, 0)
-    
-    text = (
-        "🍀 **Мины · начни игру!**\n"
-        "........................\n"
-        f"💣 **Мин:** {mines_count}\n"
-        f"💸 **Ставка:** 10 m₽\n\n"
-        f"🧮 **Следующий множитель:**\n"
-        f" `{next_m}`"
-    )
-    await callback.message.edit_text(text, reply_markup=get_game_kb(user_id), parse_mode="Markdown")
+    await callback.message.edit_text(f"💣 Поле {size}x{size}, мин: {m_count}", reply_markup=get_mines_kb(uid))
 
-@dp.callback_query(F.data.startswith("hit_"))
-async def hit_cell(callback: types.CallbackQuery):
-    user_id = callback.from_user.id
-    cell = int(callback.data.split("_")[1])
-    game = user_games[user_id]
+@dp.callback_query(F.data.startswith("m_"))
+async def play_m(callback: types.CallbackQuery):
+    uid = callback.from_user.id
+    user = get_user(uid)
+    if not user['game'] or callback.data == "mines_settings": return
+
+    if callback.data == "m_cash":
+        win = user['game']['cur_win']
+        user['bal'] += win
+        user['game'] = None
+        await callback.answer(f"Выигрыш: {win} m₽!")
+        t, k = get_main_menu(uid)
+        return await callback.message.edit_text(t, reply_markup=k, parse_mode="Markdown")
+
+    idx = int(callback.data.split("_")[1])
+    game = user['game']
     
-    if cell in game['mines']:
-        # ПРОИГРЫШ (Скрин 3)
-        game['active'] = False
-        m_val = calculate_multiplier(game['mines_count'], len(game['opened']))
-        text = (
-            "💥 **Мины · Проигрыш!**\n"
-            "........................\n"
-            f"💣 **Мин:** {game['mines_count']}\n"
-            f"💸 **Ставка:** 10 m₽\n"
-            f"💎 **Открыто:** {len(game['opened'])} из {25 - game['mines_count']}\n\n"
-            f"💜 **Мог забрать:** x{m_val} / {int(10 * m_val)} m₽"
-        )
-        await callback.message.edit_text(text, reply_markup=get_game_kb(user_id), parse_mode="Markdown")
+    if idx in game['mines']:
+        user['game'] = None
+        await callback.message.edit_text("💥 БАБАХ! Ты проиграл.")
+        await asyncio.sleep(2)
+        t, k = get_main_menu(uid)
+        await callback.message.answer(t, reply_markup=k, parse_mode="Markdown")
     else:
-        # ИГРА ИДЕТ (Скрин 4)
-        game['opened'].append(cell)
-        m_val = calculate_multiplier(game['mines_count'], len(game['opened']))
-        next_m = get_next_mults(game['mines_count'], len(game['opened']))
-        
-        text = (
-            "💎 **Мины · игра идёт.**\n"
-            "........................\n"
-            f"💣 **Мин:** {game['mines_count']}\n"
-            f"💸 **Ставка:** 10 m₽\n"
-            f"📊 **Выигрыш:** x{m_val} / {int(10 * m_val)} m₽\n\n"
-            f"🧮 **Следующий множитель:**\n"
-            f" `{next_m}`"
-        )
-        await callback.message.edit_text(text, reply_markup=get_game_kb(user_id), parse_mode="Markdown")
+        if idx not in game['open']:
+            game['open'].append(idx)
+            game['step'] += 1
+            mult = 1.2 + (game['m_count'] / 10)
+            game['cur_win'] = int(user['bet'] * (mult ** game['step']))
+            await callback.message.edit_reply_markup(reply_markup=get_mines_kb(uid))
 
-@dp.callback_query(F.data == "cashout")
-async def cashout(callback: types.CallbackQuery):
-    user_id = callback.from_user.id
-    game = user_games[user_id]
-    m_val = calculate_multiplier(game['mines_count'], len(game['opened']))
-    win = int(10 * m_val)
+# --- РАЗДЕЛ: КЕЙСЫ (СТАРЫЙ) ---
+
+@dp.callback_query(F.data == "tab_cases")
+async def show_cases(callback: types.CallbackQuery):
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📦 ДЕРЕВЯННЫЙ (50 m₽)", callback_data="buy_c_50_300")],
+        [InlineKeyboardButton(text="💰 ЗОЛОТОЙ (500 m₽)", callback_data="buy_c_500_2500")],
+        [InlineKeyboardButton(text="« Назад", callback_data="to_main")]
+    ])
+    await callback.message.edit_text("📦 **МАГАЗИН КЕЙСОВ:**\nИспытай свою удачу!", reply_markup=kb)
+
+@dp.callback_query(F.data.startswith("buy_c_"))
+async def open_c(callback: types.CallbackQuery):
+    uid = callback.from_user.id
+    user = get_user(uid)
+    _, _, cost, max_w = callback.data.split("_")
+    cost, max_w = int(cost), int(max_w)
     
-    await callback.answer(f"✅ Забрал {win} m₽!", show_alert=True)
-    text, kb = main_menu_kb(balance=182 + win)
-    await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
+    if user['bal'] < cost: return await callback.answer("Мало m₽!")
+    
+    user['bal'] -= cost
+    win = random.randint(int(cost*0.2), max_w)
+    user['bal'] += win
+    await callback.answer(f"Вам выпало: {win} m₽!", show_alert=True)
+    await show_cases(callback)
+
+# --- ОБЩЕЕ ---
 
 @dp.callback_query(F.data == "to_main")
-async def back_to_main(callback: types.CallbackQuery):
-    text, kb = main_menu_kb()
-    await callback.message.edit_text(text, reply_markup=kb, parse_mode="Markdown")
+async def back(callback: types.CallbackQuery):
+    t, k = get_main_menu(callback.from_user.id)
+    await callback.message.edit_text(t, reply_markup=k, parse_mode="Markdown")
 
-@dp.callback_query(F.data == "dev")
-async def dev(callback: types.CallbackQuery):
-    await callback.answer("⚒ В разработке...")
+@dp.callback_query(F.data.startswith("dice_"))
+async def d_game(callback: types.CallbackQuery):
+    e = callback.data.split("_")[1]
+    msg = await callback.message.answer_dice(emoji=e)
+    # Логика выигрыша для дайсов тут (опционально)
+    
+@dp.message(Command("start"))
+async def st(message: types.Message):
+    t, k = get_main_menu(message.from_user.id)
+    await message.answer(t, reply_markup=k, parse_mode="Markdown")
 
 async def main():
     await dp.start_polling(bot)
