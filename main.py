@@ -1,18 +1,18 @@
 import telebot
 import os
 
-# Берем токен из переменных Railway
-TOKEN = os.getenv("BOT_TOKEN")
+# Твой токен от BotFather
+TOKEN = "8359920618:AAFpuDjkXwbArbuC3VtaevWMIYXuBamvSt0"
 bot = telebot.TeleBot(TOKEN)
 
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.reply_to(message, "Бот работает! 🚀 Я запущен на хостинге 24/7.")
+    bot.reply_to(message, "Привет! Бот успешно запущен и работает! 🚀")
 
 @bot.message_handler(func=lambda message: True)
 def echo_all(message):
     bot.reply_to(message, f"Ты написал: {message.text}")
 
 if __name__ == "__main__":
-    print("Бот запускается...")
+    print("Бот запущен...")
     bot.infinity_polling()
