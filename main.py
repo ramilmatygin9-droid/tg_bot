@@ -25,7 +25,7 @@ active_mines_games = {}
 DOTS = ". . . . . . . . . . . . . . . . . . ."
 LINE = "────────────────"
 
-# --- КЛАВИАТУРЫ ---
+# --- КЛАВИАТУРЫ (СТАРЫЙ ИНТЕРФЕЙС + ПЕРЕНЕСЕННЫЕ МИНЫ) ---
 def main_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [
@@ -37,7 +37,7 @@ def main_kb():
             InlineKeyboardButton(text="🎰", callback_data="prep_slots")
         ],
         [
-            InlineKeyboardButton(text="💣 МИНЫ", callback_data="prep_mines"),
+            InlineKeyboardButton(text="💣 МИНЫ", callback_data="prep_mines"), # Мины теперь здесь
             InlineKeyboardButton(text="🚀 Быстрые", callback_data="under_dev")
         ],
         [InlineKeyboardButton(text="🏦 Банк", url="https://t.me/your_bot_link")],
@@ -84,19 +84,27 @@ async def handle_messages(message: types.Message):
                 await message.answer("❌ Ошибка при отправке.")
             user_support_state[uid] = False
 
-# --- ПОДГОТОВКА ИГР ---
+# --- CALLBACKS ---
+@dp.callback_query(F.data == "profile")
+async def view_profile(call: types.CallbackQuery):
+    text = f"👤 **ПРОФИЛЬ**\n{LINE}\n💰 Баланс: **{user_data['balance']} руб.**\n💸 Ставка: **{user_data['bet']} руб.**"
+    await call.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="◀️ Назад", callback_data="to_main")]]), parse_mode="Markdown")
+
+@dp.callback_query(F.data == "to_main")
+async def back_to_main(call: types.CallbackQuery):
+    await call.message.edit_text(f"🎮 **ГЛАВНОЕ МЕНЮ**\n💰 Баланс: {user_data['balance']} руб.", reply_markup=main_kb())
+
+# --- ПОДГОТОВКА ИГР (СТАРЫЙ ИНТЕРФЕЙС) ---
 @dp.callback_query(F.data.startswith("prep_"))
 async def prepare_game(call: types.CallbackQuery):
     game = call.data.split("_")[1]
     
+    # Логика меню выбора для МИН
     if game == "mines":
-        text = f"💣 **Мины · выбери мины!**\n{DOTS}\n💸 Ставка: {user_data['bet']} руб."
-        kb = [
-            [InlineKeyboardButton(text="Удвоить ставку 💸", callback_data="mines_double")],
-            [InlineKeyboardButton(text="1", callback_data="st_m_1"), InlineKeyboardButton(text="3", callback_data="st_m_3"), InlineKeyboardButton(text="5", callback_data="st_m_5")],
-            [InlineKeyboardButton(text="10", callback_data="st_m_10"), InlineKeyboardButton(text="15", callback_data="st_m_15"), InlineKeyboardButton(text="24", callback_data="st_m_24")],
-            [InlineKeyboardButton(text="◀️ назад", callback_data="to_main")]
-        ]
+        text = f"💣 **Мины · выбери количество!**\n{DOTS}\n💸 Ставка: {user_data['bet']} руб."
+        kb = [[InlineKeyboardButton(text="1", callback_data="st_m_1"), InlineKeyboardButton(text="3", callback_data="st_m_3"), InlineKeyboardButton(text="5", callback_data="st_m_5")],
+              [InlineKeyboardButton(text="10", callback_data="st_m_10"), InlineKeyboardButton(text="15", callback_data="st_m_15"), InlineKeyboardButton(text="24", callback_data="st_m_24")],
+              [InlineKeyboardButton(text="◀️ Назад", callback_data="to_main")]]
         await call.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
         return
 
@@ -111,16 +119,18 @@ async def prepare_game(call: types.CallbackQuery):
               [InlineKeyboardButton(text="⚖️ Чётный x1.94", callback_data="bet_dice_even"), InlineKeyboardButton(text="🔰 Нечётный x1.94", callback_data="bet_dice_odd")]]
     elif game == "bowling":
         text = f"{header}🎳 **Боулинг · выбери исход!**\n{footer}"
-        kb = [[InlineKeyboardButton(text="🎳 Страйк", callback_data="bet_bowling_strike"), InlineKeyboardButton(text="😟 Мимо", callback_data="bet_bowling_miss")]]
+        kb = [[InlineKeyboardButton(text="1 кегля", callback_data="bet_bowling_1"), InlineKeyboardButton(text="2 кегли", callback_data="bet_bowling_2")],
+              [InlineKeyboardButton(text="🎳 Страйк", callback_data="bet_bowling_strike"), InlineKeyboardButton(text="😟 Мимо", callback_data="bet_bowling_miss")]]
     elif game == "football":
         text = f"{header}⚽ **Футбол · выбери исход!**\n{footer}"
-        kb = [[InlineKeyboardButton(text="⚽ Гол", callback_data="bet_football_goal"), InlineKeyboardButton(text="🥅 Мимо", callback_data="bet_football_miss")]]
+        kb = [[InlineKeyboardButton(text="⚽ Гол - x1.6", callback_data="bet_football_goal")], [InlineKeyboardButton(text="🥅 Мимо - x2.4", callback_data="bet_football_miss")]]
     elif game == "basketball":
         text = f"{header}🏀 **Баскет · выбери исход!**\n{footer}"
-        kb = [[InlineKeyboardButton(text="🏀 Гол", callback_data="bet_basketball_goal"), InlineKeyboardButton(text="🗑 Мимо", callback_data="bet_basketball_miss")]]
+        kb = [[InlineKeyboardButton(text="🏀 Попадание - x1.6", callback_data="bet_basketball_goal")], [InlineKeyboardButton(text="🗑 Мимо - x2.4", callback_data="bet_basketball_miss")]]
     elif game == "darts":
         text = f"{header}🎯 **Дартс · выбери исход!**\n{footer}"
-        kb = [[InlineKeyboardButton(text="🔴 Красное", callback_data="bet_darts_red"), InlineKeyboardButton(text="⚪ Белое", callback_data="bet_darts_white")]]
+        kb = [[InlineKeyboardButton(text="🔴 Красное", callback_data="bet_darts_red"), InlineKeyboardButton(text="⚪ Белое", callback_data="bet_darts_white")],
+              [InlineKeyboardButton(text="🎯 Центр", callback_data="bet_darts_center")]]
     elif game == "slots":
         text = f"{header}🎰 **Слоты**\n{footer}"
         kb = [[InlineKeyboardButton(text="🎰 Крутить", callback_data="bet_slots_any")]]
@@ -128,14 +138,9 @@ async def prepare_game(call: types.CallbackQuery):
     kb.append([InlineKeyboardButton(text="◀️ назад", callback_data="to_main")])
     await call.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode="Markdown")
 
-# --- ЛОГИКА МИН ---
-@dp.callback_query(F.data == "mines_double")
-async def mines_double(call: types.CallbackQuery):
-    user_data["bet"] *= 2
-    await prepare_game(call)
-
+# --- ЛОГИКА МИН (ПРОДВИНУТАЯ) ---
 @dp.callback_query(F.data.startswith("st_m_"))
-async def start_mines_logic(call: types.CallbackQuery):
+async def start_mines_game(call: types.CallbackQuery):
     if user_data["balance"] < user_data["bet"]:
         await call.answer("❌ Недостаточно средств!", show_alert=True); return
     count = int(call.data.split("_")[2])
@@ -148,17 +153,15 @@ async def start_mines_logic(call: types.CallbackQuery):
 async def render_mines_field(call: types.CallbackQuery, uid: int):
     game = active_mines_games[uid]
     opened = len(game["opened"])
-    coef = round(1 + (opened * (game["count"] / 5.5)), 2)
-    next_coef = round(1 + ((opened + 1) * (game["count"] / 5.5)), 2)
-    
-    text = (f"💎 **Мины · игра идёт.**\n{DOTS}\n💣 Мин: {game['count']}\n"
-            f"💸 Ставка: {game['bet']} руб.\n📊 Выигрыш: x{coef} / {int(game['bet']*coef)} руб.\n"
-            f"📈 След. множитель: x{next_coef}")
-    
+    def get_coef(m, o):
+        c = 1.0
+        for i in range(o): c *= (25-i)/(25-m-i)
+        return round(c * 0.95, 2)
+    coef = get_coef(game["count"], opened)
+    text = f"💎 **Мины · игра идёт.**\n{DOTS}\n💣 Мин: {game['count']}\n💸 Ставка: {game['bet']} руб.\n📊 Выигрыш: x{coef} / {int(game['bet']*coef)} руб."
     kb = []
     for i in range(5):
-        row = [InlineKeyboardButton(text="💎" if (i*5+j) in game["opened"] else "❓", 
-                                    callback_data="none" if (i*5+j) in game["opened"] else f"m_cl_{i*5+j}") for j in range(5)]
+        row = [InlineKeyboardButton(text="💎" if (i*5+j) in game["opened"] else "❓", callback_data="none" if (i*5+j) in game["opened"] else f"m_cl_{i*5+j}") for j in range(5)]
         kb.append(row)
     if opened > 0: kb.append([InlineKeyboardButton(text="Забрать выигрыш ✅", callback_data="m_take")])
     await call.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
@@ -169,16 +172,9 @@ async def mine_click(call: types.CallbackQuery):
     if uid not in active_mines_games: return
     idx = int(call.data.split("_")[2])
     game = active_mines_games[uid]
-    
     if game["field"][idx] == 1:
         user_data["balance"] -= game["bet"]
-        # Визуализация проигрыша
-        kb = []
-        for i in range(5):
-            row = [InlineKeyboardButton(text="💥" if (i*5+j) == idx else ("💣" if game["field"][i*5+j] == 1 else "💎"), callback_data="none") for j in range(5)]
-            kb.append(row)
-        kb.append([InlineKeyboardButton(text="🔄 Снова", callback_data="prep_mines"), InlineKeyboardButton(text="◀️ назад", callback_data="to_main")])
-        await call.message.edit_text(f"💥 **БУМ! Проигрыш.**\n💰 Баланс: {user_data['balance']} руб.", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
+        await call.message.edit_text(f"💥 **БУМ! Проигрыш.**\n💰 Баланс: {user_data['balance']} руб.", reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔄 Снова", callback_data="prep_mines")]]))
         del active_mines_games[uid]
     else:
         game["opened"].append(idx)
@@ -188,17 +184,17 @@ async def mine_click(call: types.CallbackQuery):
 async def mine_take(call: types.CallbackQuery):
     uid = call.from_user.id
     game = active_mines_games[uid]
-    coef = round(1 + (len(game["opened"]) * (game["count"] / 5.5)), 2)
-    win = int(game["bet"] * coef)
+    def get_coef(m, o):
+        c = 1.0
+        for i in range(o): c *= (25-i)/(25-m-i)
+        return round(c * 0.95, 2)
+    win = int(game["bet"] * get_coef(game["count"], len(game["opened"])))
     user_data["balance"] += (win - game["bet"])
-    await call.message.answer(f"✅ Вы забрали {win} руб.!")
+    await call.message.answer(f"✅ Забрали {win} руб.!")
     await back_to_main(call)
     del active_mines_games[uid]
 
-@dp.callback_query(F.data == "to_main")
-async def back_to_main(call: types.CallbackQuery):
-    await call.message.edit_text(f"🎮 **ГЛАВНОЕ МЕНЮ**\n💰 Баланс: {user_data['balance']} руб.", reply_markup=main_kb())
-
+# --- ЗАПУСК ---
 async def main():
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot, admin_bot)
