@@ -43,65 +43,75 @@ async def prepare_game(call: types.CallbackQuery):
     btn_back = [InlineKeyboardButton(text="◀️ назад", callback_data="to_main")]
     
     if game == "bowling":
-        text = f"Рамиль\n🎳 **Боулинг · выбери исход!**\n{DOTS}\n💸 Ставка: {user_data['bet']} mс\n\n🔰 **Коэффициенты:**\n1 - 5 кегли (x5.8)\n🎳 Страйк (x5.8)\n😟 Мимо (x5.8)"
-        kb = [
-            [InlineKeyboardButton(text="1 кегля", callback_data="play_bowl_1"), InlineKeyboardButton(text="3 кегли", callback_data="play_bowl_3")],
-            [InlineKeyboardButton(text="4 кегли", callback_data="play_bowl_4"), InlineKeyboardButton(text="5 кегель", callback_data="play_bowl_5")],
-            [InlineKeyboardButton(text="🎳 Страйк", callback_data="play_bowl_strike"), InlineKeyboardButton(text="😟 Мимо", callback_data="play_bowl_miss")],
-            btn_back
-        ]
+        text = f"Рамиль\n🎳 **Боулинг · выбери исход!**\n{DOTS}\n💸 Ставка: {user_data['bet']} mс"
+        kb = [[InlineKeyboardButton(text="🎳 Бросок", callback_data="play_bowl_anim")], btn_back]
     elif game == "slots":
         text = f"Рамиль\n🎰 **Барабан · испытай удачу!**\n{DOTS}\n💸 Ставка: {user_data['bet']} mс"
-        kb = [[InlineKeyboardButton(text="🎰 Крутить", callback_data="play_slots_spin")], btn_back]
-    # Логика для остальных (футбол, дартс и т.д. остается как была)
+        kb = [[InlineKeyboardButton(text="🎰 Крутить", callback_data="play_slots_anim")], btn_back]
     elif game == "basketball":
-        text = f"Рамиль\n🏀 **Баскетбол · выбери исход!**\n{DOTS}\n💸 Ставка: {user_data['bet']} mс"
-        kb = [[InlineKeyboardButton(text="🏀 Гол - x1.6", callback_data="play_bask_goal")], [InlineKeyboardButton(text="🗑 Мимо - x2.4", callback_data="play_bask_miss")], btn_back]
+        text = f"Рамиль\n🏀 **Баскетбол · кидай мяч!**\n{DOTS}\n💸 Ставка: {user_data['bet']} mс"
+        kb = [[InlineKeyboardButton(text="🏀 Бросок", callback_data="play_bask_anim")], btn_back]
+    elif game == "football":
+        text = f"Рамиль\n⚽ **Футбол · бей по воротам!**\n{DOTS}\n💸 Ставка: {user_data['bet']} mс"
+        kb = [[InlineKeyboardButton(text="⚽ Удар", callback_data="play_foot_anim")], btn_back]
+    elif game == "darts":
+        text = f"Рамиль\n🎯 **Дартс · целься в центр!**\n{DOTS}\n💸 Ставка: {user_data['bet']} mс"
+        kb = [[InlineKeyboardButton(text="🎯 Бросок", callback_data="play_dart_anim")], btn_back]
+    elif game == "dice":
+        text = f"Рамиль\n🎲 **Кубик · испытай удачу!**\n{DOTS}\n💸 Ставка: {user_data['bet']} mс"
+        kb = [[InlineKeyboardButton(text="🎲 Бросить", callback_data="play_dice_anim")], btn_back]
     else: return
     await call.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
 
-# --- ЛОГИКА ИГР (БОУЛИНГ И БАРАБАН) ---
+# --- ЛОГИКА С АНИМАЦИЕЙ ЭМОДЗИ ---
 @dp.callback_query(F.data.startswith("play_"))
-async def play_engine(call: types.CallbackQuery):
-    data = call.data.split("_")
-    game_type = data[1]
-    choice = data[2]
+async def play_with_anim(call: types.CallbackQuery):
+    game_type = call.data.split("_")[1]
     
     if user_data["balance"] < user_data["bet"]:
         await call.answer("❌ Недостаточно средств!", show_alert=True)
         return
 
+    # Соответствие типов игр эмодзи Telegram
+    emojis = {
+        "bowl": " bowling",
+        "slots": "🎰",
+        "bask": "🏀",
+        "foot": "⚽",
+        "dart": "🎯",
+        "dice": "🎲"
+    }
+    
+    # Отправляем анимированный эмодзи
+    msg = await call.message.answer_dice(emoji=emojis.get(game_type, "🎲"))
+    user_data["balance"] -= user_data["bet"]
+    
+    # Ждем завершения анимации
+    await asyncio.sleep(4)
+    
+    value = msg.dice.value
     win = False
-    coef = 5.8
-    result_text = ""
+    coef = 0.0
 
-    if game_type == "bowl":
-        # Генерация результата: 1, 3, 4, 5 кеглей, strike (6) или miss (0)
-        res_val = random.choice(["1", "3", "4", "5", "strike", "miss"])
-        win = (choice == res_val)
-        names = {"1": "1 кеглю", "3": "3 кегли", "4": "4 кегли", "5": "5 кеглей", "strike": "СТРАЙК 🎳", "miss": "МИМО 😟"}
-        result_text = f"Результат броска: {names[res_val]}"
-
+    # Определение выигрыша по значению анимации
+    if game_type == "dice":
+        if value >= 4: win, coef = True, 1.94
+    elif game_type == "foot" or game_type == "bask":
+        if value >= 3: win, coef = True, 1.6
+    elif game_type == "bowl":
+        if value == 6: win, coef = True, 5.8
+    elif game_type == "dart":
+        if value == 6: win, coef = True, 5.8
     elif game_type == "slots":
-        # Используем встроенный кубик Телеграма для слотов
-        msg = await call.message.answer_dice(emoji="🎰")
-        # Значения 1, 22, 43, 64 - это джекпоты в слотах tg
-        if msg.dice.value in [1, 22, 43, 64]:
-            win = True
-            coef = 10.0
-            result_text = "🎰 ДЖЕКПОТ!"
-        else:
-            win = False
-            result_text = "🎰 Ничего не выпало..."
+        if value in [1, 22, 43, 64]: win, coef = True, 10.0
 
     if win:
-        profit = round(user_data["bet"] * coef, 2)
-        user_data["balance"] += (profit - user_data["bet"])
-        await call.message.answer(f"🎉 {result_text}\nВы выиграли {profit} mc!")
+        reward = round(user_data["bet"] * coef, 2)
+        user_data["balance"] += reward
+        await call.message.answer(f"🎉 Победил! Выигрыш: {reward} mc\n💰 Баланс: {user_data['balance']} mc")
     else:
-        user_data["balance"] -= user_data["bet"]
-        await call.message.answer(f"📉 {result_text}\nПроигрыш. Баланс: {user_data['balance']} mc")
-    
+        await call.message.answer(f"📉 Проигрыш! Баланс: {user_data['balance']} mc")
+
     await call.answer()
     await cmd_start(call.message)
 
