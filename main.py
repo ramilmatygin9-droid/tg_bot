@@ -37,6 +37,9 @@ def main_kb():
         [
             InlineKeyboardButton(text="🆘 Помощь", callback_data="ask_help"),
             InlineKeyboardButton(text="👤 Профиль", callback_data="profile")
+        ],
+        [
+            InlineKeyboardButton(text="💳 Вывод", callback_data="withdraw")
         ]
     ])
 
@@ -46,36 +49,19 @@ async def prepare_game(call: types.CallbackQuery):
     game = call.data.split("_")[1]
     name = call.from_user.first_name
     header = f"**{name}**\n"
-    footer = f"{DOTS}\n💸 **Ставка: 10 m¢**"
+    footer = f"{DOTS}\n💸 **Ставка: 10 руб.**"
     
     kb = []
     text = ""
 
     if game == "dice":
-        # СТРОГО ПО СКРИНШОТУ КУБИКА
         text = f"{header}🍀 **Кубик · выбери режим!**\n{footer}"
         kb = [
-            [
-                InlineKeyboardButton(text="1️⃣", callback_data="bet_dice_v1"),
-                InlineKeyboardButton(text="2️⃣", callback_data="bet_dice_v2"),
-                InlineKeyboardButton(text="3️⃣", callback_data="bet_dice_v3")
-            ],
-            [
-                InlineKeyboardButton(text="4️⃣", callback_data="bet_dice_v4"),
-                InlineKeyboardButton(text="5️⃣", callback_data="bet_dice_v5"),
-                InlineKeyboardButton(text="6️⃣", callback_data="bet_dice_v6")
-            ],
-            [
-                InlineKeyboardButton(text="⚖️ Чётный x1.94", callback_data="bet_dice_even"),
-                InlineKeyboardButton(text="🔰 Нечётный x1.94", callback_data="bet_dice_odd")
-            ],
-            [
-                InlineKeyboardButton(text="➖ Равно 3 x5.8", callback_data="bet_dice_eq3")
-            ],
-            [
-                InlineKeyboardButton(text="➕ Больше 3 x1.94", callback_data="bet_dice_big"),
-                InlineKeyboardButton(text="➖ Меньше 3 x2.9", callback_data="bet_dice_small")
-            ]
+            [InlineKeyboardButton(text="1️⃣", callback_data="bet_dice_v1"), InlineKeyboardButton(text="2️⃣", callback_data="bet_dice_v2"), InlineKeyboardButton(text="3️⃣", callback_data="bet_dice_v3")],
+            [InlineKeyboardButton(text="4️⃣", callback_data="bet_dice_v4"), InlineKeyboardButton(text="5️⃣", callback_data="bet_dice_v5"), InlineKeyboardButton(text="6️⃣", callback_data="bet_dice_v6")],
+            [InlineKeyboardButton(text="⚖️ Чётный x1.94", callback_data="bet_dice_even"), InlineKeyboardButton(text="🔰 Нечётный x1.94", callback_data="bet_dice_odd")],
+            [InlineKeyboardButton(text="➖ Равно 3 x5.8", callback_data="bet_dice_eq3")],
+            [InlineKeyboardButton(text="➕ Больше 3 x1.94", callback_data="bet_dice_big"), InlineKeyboardButton(text="➖ Меньше 3 x2.9", callback_data="bet_dice_small")]
         ]
     elif game == "football":
         kb = [[InlineKeyboardButton(text="⚽ Гол - x1.6", callback_data="bet_football_goal")],
@@ -141,12 +127,17 @@ async def play_game(call: types.CallbackQuery):
     elif game_type == "slots":
         win, coef = (val in [1, 22, 43, 64]), 10.0
 
-    res_text = f"**{call.from_user.first_name}**\n{'🥳 **Победа!**' if win else '❌ **Проигрыш**'}\n{LINE}\n💰 Выигрыш: {int(10 * coef) if win else 0} m¢ {'✅' if win else '❌'}\n🎲 Результат: {val}"
+    res_text = f"**{call.from_user.first_name}**\n{'🥳 **Победа!**' if win else '❌ **Проигрыш**'}\n{LINE}\n💰 Выигрыш: {int(10 * coef) if win else 0} руб. {'✅' if win else '❌'}\n🎲 Результат: {val}"
     kb = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="🔄 играть снова", callback_data=f"prep_{game_type}"),
         InlineKeyboardButton(text="◀️ в меню", callback_data="to_main")
     ]])
     await msg.reply(res_text, reply_markup=kb, parse_mode="Markdown")
+
+# --- ВЫВОД (В РАЗРАБОТКЕ) ---
+@dp.callback_query(F.data == "withdraw")
+async def withdraw_handler(call: types.CallbackQuery):
+    await call.answer("💳 Данный раздел находится в разработке!", show_alert=True)
 
 # --- ПОДДЕРЖКА ---
 @dp.callback_query(F.data == "ask_help")
