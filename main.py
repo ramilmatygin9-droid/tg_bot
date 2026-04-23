@@ -8,7 +8,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 # --- НАСТРОЙКИ ---
 GAME_TOKEN = "8359920618:AAFpuDjkXwbArbuC3VtaevWMIYXuBamvSt0"
 ADMIN_TOKEN = "8610751877:AAG4eHS_knuJ-tFuVVfSIXkOC2AJxIdC990"
-MY_ID = 846239258  # ИСПРАВЛЕНО: актуальный ID админа
+MY_ID = 846239258  # Твой актуальный ID
 
 bot = Bot(token=GAME_TOKEN)
 admin_bot = Bot(token=ADMIN_TOKEN)
@@ -50,7 +50,6 @@ def main_kb():
 # --- ОБРАБОТКА КОМАНД ---
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
-    # Проверяем, в каком боте нажали старт по токену
     if message.bot.token == GAME_TOKEN:
         text = (
             f"🎮 **ДАВАЙ НАЧНЕМ ИГРАТЬ!**\n\n"
@@ -60,14 +59,12 @@ async def cmd_start(message: types.Message):
         )
         await message.answer(text, reply_markup=main_kb(), parse_mode="Markdown")
 
-# --- ЛОГИКА СООБЩЕНИЙ (ПОМОЩЬ И СТАВКА) ---
+# --- ЛОГИКА СООБЩЕНИЙ ---
 @dp.message()
 async def handle_messages(message: types.Message):
     uid = message.from_user.id
     
-    # Логика для ОСНОВНОГО БОТА
     if message.bot.token == GAME_TOKEN:
-        # Изменение ставки
         if change_bet_state.get(uid):
             if message.text.isdigit():
                 user_data["bet"] = int(message.text)
@@ -75,18 +72,19 @@ async def handle_messages(message: types.Message):
                 await message.answer(f"✅ Ставка изменена на **{user_data['bet']} руб.**", reply_markup=main_kb())
             return
 
-        # Отправка в поддержку
         if user_support_state.get(uid):
             kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="💬 Ответить", callback_data=f"adm_reply_{uid}")]])
             sms = (f"🆘 **НОВОЕ ОБРАЩЕНИЕ**\n{LINE}\n👤 Имя: {message.from_user.first_name}\n"
                    f"🆔 ID: `{uid}`\n{LINE}\n✉️ Текст: {message.text}")
             
-            # Отправляем через админ-бота тебе
-            await admin_bot.send_message(MY_ID, sms, reply_markup=kb, parse_mode="Markdown")
-            await message.answer("✅ Сообщение доставлено администрации!")
+            try:
+                await admin_bot.send_message(MY_ID, sms, reply_markup=kb, parse_mode="Markdown")
+                await message.answer("✅ Сообщение отправлено!") # Подтверждение отправки
+            except:
+                await message.answer("❌ Ошибка при отправке. Попробуйте позже.")
+            
             user_support_state[uid] = False
 
-    # Логика для АДМИН-БОТА (Ответ пользователю)
     elif message.bot.token == ADMIN_TOKEN and uid == MY_ID:
         if admin_reply_state.get(MY_ID):
             target = admin_reply_state[MY_ID]
@@ -95,7 +93,7 @@ async def handle_messages(message: types.Message):
                 await message.answer(f"✅ Ответ отправлен пользователю `{target}`")
                 del admin_reply_state[MY_ID]
             except:
-                await message.answer("❌ Ошибка отправки: пользователь заблокировал бота.")
+                await message.answer("❌ Ошибка отправки пользователю.")
 
 # --- CALLBACKS ---
 @dp.callback_query(F.data == "under_dev")
@@ -198,7 +196,6 @@ async def back_to_main(call: types.CallbackQuery):
     await bot.send_message(call.from_user.id, f"🎮 **ГЛАВНОЕ МЕНЮ**\n💰 Баланс: {user_data['balance']} руб.", reply_markup=main_kb())
 
 async def main():
-    # Запускаем обоих ботов на одном диспетчере
     await dp.start_polling(bot, admin_bot)
 
 if __name__ == "__main__":
