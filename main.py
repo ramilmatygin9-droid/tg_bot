@@ -1,145 +1,91 @@
 import asyncio
-import random
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-TOKEN = "ТВОЙ_ТОКЕН_БОТА"
+TOKEN = "8359920618:AAFpuDjkXwbArbuC3VtaevWMIYXuBamvSt0"
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# База данных текущих игр
-active_games = {}
+# --- КЛАВИАТУРЫ ДЛЯ ДАРТСА ---
 
-def get_header(user: types.User):
-    # Заглушка баланса, в идеале брать из БД
-    return (f"👤 {user.first_name} | ID: `{user.id}`\n"
-            f"🏆 Ваш уровень: 1\n"
-            f"💰 Баланс: 1000 m¢\n"
-            f"────────────────")
-
-# --- КЛАВИАТУРЫ ---
-
-def get_mines_setup_kb():
-    # Выбор количества мин как на видео
-    buttons = [
-        [InlineKeyboardButton(text=f"💣 {i}", callback_data=f"setup_mines_{i}") for i in range(3, 6)],
-        [InlineKeyboardButton(text=f"💣 {i}", callback_data=f"setup_mines_{i}") for i in range(10, 13)],
+def get_darts_kb():
+    # Коэффициенты как на видео
+    kb = [
+        [InlineKeyboardButton(text="🎯 Центр (x5.0)", callback_data="darts_bet_center")],
+        [InlineKeyboardButton(text="🔴 Красное (x2.0)", callback_data="darts_bet_red"),
+         InlineKeyboardButton(text="⚪ Белое (x2.0)", callback_data="darts_bet_white")],
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="to_main")]
     ]
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
-
-def get_mines_field_kb(uid, finished=False):
-    game = active_games[uid]
-    kb = []
-    for y in range(5):
-        row = []
-        for x in range(5):
-            pos = f"{x}_{y}"
-            if pos in game['opened']:
-                text = "💥" if pos in game['mines_pos'] else "💎"
-            elif finished and pos in game['mines_pos']:
-                text = "💣" # Показываем где были мины при проигрыше
-            else:
-                text = "🔹"
-            row.append(InlineKeyboardButton(text=text, callback_data=f"mine_click_{pos}"))
-        kb.append(row)
-    
-    if not finished:
-        kb.append([InlineKeyboardButton(text=f"📥 Забрать {game['cur_win']:.2f} m¢", callback_data="mine_stop")])
-    else:
-        kb.append([InlineKeyboardButton(text="🔄 Играть снова", callback_data="game_mines")])
-    
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
-# --- ЛОГИКА ИГРЫ ---
+# --- ЛОГИКА ДАРТСА ---
 
-@dp.callback_query(F.data == "game_mines")
-async def mines_start(call: types.CallbackQuery):
+@dp.callback_query(F.data == "game_darts")
+async def darts_welcome(call: types.CallbackQuery):
     await call.message.edit_text(
-        f"{get_header(call.from_user)}\n💣 **Мины**\nВыбери количество мин на поле:",
-        reply_markup=get_mines_setup_kb(),
+        f"👤 {call.from_user.first_name}\n"
+        "🎯 **Дартс — выбери сектор!**\n\n"
+        "Ставка: 10 m¢",
+        reply_markup=get_darts_kb(),
         parse_mode="Markdown"
     )
 
-@dp.callback_query(F.data.startswith("setup_mines_"))
-async def start_game_with_mines(call: types.CallbackQuery):
-    uid = call.from_user.id
-    count = int(call.data.split("_")[2])
+@dp.callback_query(F.data.startswith("darts_bet_"))
+async def play_darts(call: types.CallbackQuery):
+    bet_type = call.data.split("_")[2] # center, red, white
     
-    # Генерация случайных позиций мин
-    all_positions = [f"{x}_{y}" for x in range(5) for y in range(5)]
-    mines_pos = random.sample(all_positions, count)
+    # Отправляем дартс
+    msg = await call.message.answer_dice(emoji="🎯")
+    val = msg.dice.value
     
-    active_games[uid] = {
-        "mines_count": count,
-        "mines_pos": mines_pos,
-        "opened": [],
-        "cur_win": 10.0, # Начальная ставка
-        "multiplier": 1.2 + (count * 0.15) # Пример роста коэфа
-    }
+    # Значения дартса в Telegram:
+    # 6 - центр (яблочко)
+    # 4, 5 - красное
+    # 2, 3 - белое
+    # 1 - промах
     
-    await call.message.edit_text(
-        f"{get_header(call.from_user)}\n💣 **Мины: Игра началась!**\nСделано ходов: 0\nМножитель: x1.0",
-        reply_markup=get_mines_field_kb(uid),
-        parse_mode="Markdown"
-    )
+    win = False
+    coef = 0
+    
+    if bet_type == "center" and val == 6:
+        win, coef = True, 5.0
+    elif bet_type == "red" and val in [4, 5]:
+        win, coef = True, 2.0
+    elif bet_type == "white" and val in [2, 3]:
+        win, coef = True, 2.0
 
-@dp.callback_query(F.data.startswith("mine_click_"))
-async def handle_click(call: types.CallbackQuery):
-    uid = call.from_user.id
-    if uid not in active_games: return
-    
-    pos = call.data.replace("mine_click_", "")
-    game = active_games[uid]
-    
-    if pos in game['opened']:
-        return await call.answer("Уже открыто!")
+    await asyncio.sleep(4) # Ждем пока дротик долетит
 
-    game['opened'].append(pos)
-    
-    if pos in game['mines_pos']:
-        # ПРОИГРЫШ
-        await call.message.edit_text(
-            f"{get_header(call.from_user)}\n💥 **КРАХ! Вы подорвались на мине!**",
-            reply_markup=get_mines_field_kb(uid, finished=True),
-            parse_mode="Markdown"
-        )
-        del active_games[uid]
+    if win:
+        res_text = f"🥳 **Победа! x{coef}**\n💰 Выигрыш: {int(10 * coef)} m¢"
     else:
-        # ПОПАЛ В АЛМАЗ
-        game['cur_win'] = round(game['cur_win'] * game['multiplier'], 2)
-        await call.message.edit_text(
-            f"{get_header(call.from_user)}\n💎 **Отлично! Алмаз найден.**\nСделано ходов: {len(game['opened'])}\nВыплата: {game['cur_win']} m¢",
-            reply_markup=get_mines_field_kb(uid),
-            parse_mode="Markdown"
-        )
+        res_text = "❌ **Проигрыш!**\nДротик попал не туда..."
 
-@dp.callback_query(F.data == "mine_stop")
-async def stop_game(call: types.CallbackQuery):
-    uid = call.from_user.id
-    if uid not in active_games: return
-    
-    win = active_games[uid]['cur_win']
-    # Тут можно добавить код начисления win в БД
-    
-    await call.message.edit_text(
-        f"{get_header(call.from_user)}\n💰 **Победа! Вы забрали {win} m¢**",
-        reply_markup=main_menu_kb(), # Возврат в главное меню
+    retry_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🔄 Играть еще раз", callback_data="game_darts")],
+        [InlineKeyboardButton(text="⬅️ В меню", callback_data="to_main")]
+    ])
+
+    await call.message.answer(
+        f"👤 {call.from_user.first_name}\n"
+        f"🎯 Результат броска: {val}\n"
+        f"────────────────\n"
+        f"{res_text}",
+        reply_markup=retry_kb,
         parse_mode="Markdown"
     )
-    del active_games[uid]
 
-# --- ГЛАВНОЕ МЕНЮ (Заглушка) ---
+# --- ГЛАВНОЕ МЕНЮ (чтобы все работало) ---
+
 @dp.callback_query(F.data == "to_main")
-async def to_main(call: types.CallbackQuery):
-    await call.message.edit_text(f"{get_header(call.from_user)}\nГлавное меню:", reply_markup=main_menu_kb(), parse_mode="Markdown")
+async def back_to_main(call: types.CallbackQuery):
+    # Тут используй клавиатуру из предыдущего кода с 6-ю кнопками игр
+    from __main__ import get_main_menu 
+    await call.message.edit_text("Выбирай игру:", reply_markup=get_main_menu())
 
 async def main():
     await dp.start_polling(bot)
-
-if __name__ == "__main__":
-    asyncio.run(main())
 
 if __name__ == "__main__":
     asyncio.run(main())
