@@ -7,7 +7,7 @@ TOKEN = "8359920618:AAFpuDjkXwbArbuC3VtaevWMIYXuBamvSt0"
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# --- ТОЧНЫЙ ДИЗАЙН ---
+# --- КОНСТАНТЫ ДИЗАЙНА ---
 DOTS = ". . . . . . . . . . . . . . . . . . ."
 LINE = "────────────────"
 
@@ -34,7 +34,6 @@ async def prepare_game(call: types.CallbackQuery):
     game = call.data.split("_")[1]
     name = call.from_user.first_name
     
-    # Конфиги для меню каждой игры
     configs = {
         "football": {
             "text": f"**{name}**\n⚽ **Футбол · выбери исход!**\n{DOTS}\n💸 **Ставка: 10 m¢**",
@@ -66,34 +65,41 @@ async def prepare_game(call: types.CallbackQuery):
         }
     }
     
-    config = configs[game]
-    config["kb"].append([InlineKeyboardButton(text="◀️ назад", callback_data="to_main")])
-    await call.message.edit_text(config["text"], reply_markup=InlineKeyboardMarkup(inline_keyboard=config["kb"]), parse_mode="Markdown")
+    res = configs[game]
+    res["kb"].append([InlineKeyboardButton(text="◀️ назад", callback_data="to_main")])
+    await call.message.edit_text(res["text"], reply_markup=InlineKeyboardMarkup(inline_keyboard=res["kb"]), parse_mode="Markdown")
 
-# --- ЛОГИКА И ОФОРМЛЕНИЕ РЕЗУЛЬТАТА ---
+# --- ЛОГИКА ИГРЫ И РЕЗУЛЬТАТА ---
 @dp.callback_query(F.data.startswith("bet_"))
 async def play_game(call: types.CallbackQuery):
     data = call.data.split("_")
     game_type, choice = data[1], data[2]
+    name = call.from_user.first_name
     
-    # Кидаем дайс
+    # Удаляем меню выбора, чтобы не мешало анимации
+    await call.message.delete()
+    
+    # Отправляем анимацию
     emoji = {"football":"⚽","darts":"🎯","bowling":"🎳","basketball":"🏀","dice":"🎲","slots":"🎰"}[game_type]
-    msg = await call.message.answer_dice(emoji=emoji)
+    msg = await call.bot.send_dice(call.message.chat.id, emoji=emoji)
     
     await asyncio.sleep(4)
     val = msg.dice.value
     win = False
-    coef = 0
+    coef = 0.0
 
-    # Проверка выигрыша и коэфы
-    if game_type == "football":
-        win = (choice == "goal" and val >= 3) or (choice == "miss" and val < 3)
+    # ТОЧНАЯ ПРОВЕРКА ДЛЯ КАЖДОЙ ИГРЫ
+    if game_type == "basketball":
+        is_goal = val >= 4 # 4 и 5 в баскете - это гол
+        win = (choice == "goal" and is_goal) or (choice == "miss" and not is_goal)
         coef = 1.6 if choice == "goal" else 2.4
-    elif game_type == "basketball":
-        win = (choice == "goal" and val >= 4) or (choice == "miss" and val < 4)
+    elif game_type == "football":
+        is_goal = val >= 3 # 3, 4, 5 в футболе - это гол
+        win = (choice == "goal" and is_goal) or (choice == "miss" and not is_goal)
         coef = 1.6 if choice == "goal" else 2.4
     elif game_type == "bowling":
-        win = (choice == "strike" and val == 6) or (choice == "any" and val > 1)
+        is_strike = (val == 6)
+        win = (choice == "strike" and is_strike) or (choice == "any" and val > 1 and not is_strike)
         coef = 4.8 if choice == "strike" else 1.4
     elif game_type == "darts":
         if choice == "center": win = (val == 6); coef = 5.8
@@ -108,13 +114,13 @@ async def play_game(call: types.CallbackQuery):
     elif game_type == "slots":
         win = (val in [1, 22, 43, 64]); coef = 10.0
 
-    # ТЕКСТ РЕЗУЛЬТАТА КАК НА ВИДЕО
+    # ФОРМИРУЕМ ОТВЕТ
     status = "🥳 **Победа!**" if win else "❌ **Проигрыш**"
     profit = int(10 * coef) if win else 0
     res_emoji = "✅" if win else "❌"
     
     result_text = (
-        f"**{call.from_user.first_name}**\n"
+        f"**{name}**\n"
         f"{status}\n"
         f"{LINE}\n"
         f"💰 Выигрыш: {profit} m¢ {res_emoji}\n"
@@ -126,7 +132,8 @@ async def play_game(call: types.CallbackQuery):
         [InlineKeyboardButton(text="◀️ в меню", callback_data="to_main")]
     ])
 
-    await call.message.answer(result_text, reply_markup=kb, parse_mode="Markdown")
+    # Отправляем результат ответным сообщением к анимации
+    await msg.reply(result_text, reply_markup=kb, parse_mode="Markdown")
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
