@@ -8,7 +8,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 # --- НАСТРОЙКИ ---
 GAME_TOKEN = "8359920618:AAHKLw57b3LJ7MupDtL3hWP_Msl1SwTABSQ" 
 ADMIN_TOKEN = "8034796055:AAFrpMOUowWvo6W3kGBsoMiq9RVjsaM2Qig"
-MY_ID = 846239258 
+MY_ID = 846239258 # Твой личный ID, куда придут сообщения в админ-боте
 
 bot = Bot(token=GAME_TOKEN)
 admin_bot = Bot(token=ADMIN_TOKEN)
@@ -49,27 +49,27 @@ def main_kb():
 async def cmd_start(message: types.Message):
     await message.answer(f"🎮 **ДАВАЙ НАЧНЕМ ИГРАТЬ!**\n\n💰 Баланс: {user_data['balance']} mс\n💸 Ставка: {user_data['bet']} mс", reply_markup=main_kb())
 
-# --- ПОМОЩЬ (ПИШЕТ В БОТА АДМИНУ) ---
+# --- ПОМОЩЬ (ПЕРЕСЫЛКА В АДМИН-БОТ) ---
 @dp.callback_query(F.data == "ask_help")
 async def help_handler(call: types.CallbackQuery):
     user_support_state[call.from_user.id] = True
-    await call.message.answer("🆘 **ПОДДЕРЖКА**\n\nНапишите ваше сообщение прямо сюда, и я передам его администратору.")
+    await call.message.answer("🆘 **ПОДДЕРЖКА**\n\nНапишите ваше сообщение здесь, и оно будет отправлено администратору.")
     await call.answer()
 
-# --- ОБРАБОТКА ВСЕХ СООБЩЕНИЙ (ПОДДЕРЖКА И СТАВКА) ---
+# --- ОБРАБОТКА ВСЕХ СООБЩЕНИЙ ---
 @dp.message()
 async def handle_all_messages(message: types.Message):
     uid = message.from_user.id
     
-    # Отправка сообщения админу в бота
+    # ОТПРАВКА СООБЩЕНИЯ В АДМИН-БОТ
     if user_support_state.get(uid):
-        sms = (f"🆘 **НОВОЕ ОБРАЩЕНИЕ**\n{LINE}\n👤 Имя: {message.from_user.first_name}\n🆔 ID: `{uid}`\n✉️ Текст: {message.text}")
+        sms = (f"🆘 **НОВОЕ ОБРАЩЕНИЕ**\n{LINE}\n👤 От: {message.from_user.first_name}\n🆔 ID: `{uid}`\n✉️ Текст: {message.text}")
         try:
-            # Отправляем через admin_bot тебе в ЛС
+            # Отправка идет через токен админ-бота на твой ID
             await admin_bot.send_message(MY_ID, sms)
-            await message.answer("✅ Сообщение успешно доставлено администратору!")
-        except:
-            await message.answer("❌ Ошибка: бот не может написать админу. Проверьте MY_ID.")
+            await message.answer("✅ Ваше обращение отправлено администратору!")
+        except Exception as e:
+            await message.answer(f"❌ Ошибка отправки. Убедитесь, что вы запустили админ-бота.")
         user_support_state[uid] = False
         return
 
@@ -79,7 +79,7 @@ async def handle_all_messages(message: types.Message):
             user_data["bet"] = int(message.text)
             game_back = change_bet_state.pop(uid)
             await message.answer(f"✅ Ставка: {user_data['bet']} mс")
-            # Возврат в меню (имитация нажатия кнопки)
+            # Возврат в игру
             mock_call = types.CallbackQuery(id="0", from_user=message.from_user, chat_instance="0", message=message, data=f"prep_{game_back}")
             await prepare_game(mock_call)
 
@@ -96,7 +96,6 @@ async def prepare_game(call: types.CallbackQuery):
               [InlineKeyboardButton(text="1", callback_data="b_d_1"), InlineKeyboardButton(text="2", callback_data="b_d_2"), InlineKeyboardButton(text="3", callback_data="b_d_3")],
               [InlineKeyboardButton(text="4", callback_data="b_d_4"), InlineKeyboardButton(text="5", callback_data="b_d_5"), InlineKeyboardButton(text="6", callback_data="b_d_6")],
               [InlineKeyboardButton(text="⚖️ Чётный x1.94", callback_data="b_d_e"), InlineKeyboardButton(text="🔰 Нечётный x1.94", callback_data="b_d_o")],
-              [InlineKeyboardButton(text="➕ Больше 3 x1.94", callback_data="b_d_m"), InlineKeyboardButton(text="➖ Меньше 3 x2.9", callback_data="b_d_l")],
               btn_back]
     elif game == "basketball":
         text = f"Рамиль\n🏀 **Баскетбол · выбери исход!**\n{DOTS}\n💸 Ставка: {user_data['bet']} mс"
@@ -106,16 +105,13 @@ async def prepare_game(call: types.CallbackQuery):
         kb = [[btn_edit], [InlineKeyboardButton(text="⚽ Гол - x1.6", callback_data="b_f_g")], [InlineKeyboardButton(text="🥅 Мимо - x2.4", callback_data="b_f_m")], btn_back]
     elif game == "darts":
         text = f"Рамиль\n🎯 **Дартс · выбери исход!**\n{DOTS}\n💸 Ставка: {user_data['bet']} mс"
-        kb = [[btn_edit], [InlineKeyboardButton(text="🔴 Красное", callback_data="b_dt_r"), InlineKeyboardButton(text="⚪ Белое", callback_data="b_dt_w")],
-              [InlineKeyboardButton(text="🎯 Центр", callback_data="b_dt_c"), InlineKeyboardButton(text="😟 Мимо", callback_data="b_dt_m")], btn_back]
+        kb = [[btn_edit], [InlineKeyboardButton(text="🔴 Красное", callback_data="b_dt_r"), InlineKeyboardButton(text="⚪ Белое", callback_data="b_dt_w")], btn_back]
     elif game == "bowling":
         text = f"Рамиль\n🎳 **Боулинг · выбери исход!**\n{DOTS}\n💸 Ставка: {user_data['bet']} mс"
-        kb = [[btn_edit], [InlineKeyboardButton(text="1 кегля", callback_data="b_bw_1"), InlineKeyboardButton(text="3 кегли", callback_data="b_bw_3")],
-              [InlineKeyboardButton(text="🎳 Страйк", callback_data="b_bw_s"), InlineKeyboardButton(text="😟 Мимо", callback_data="b_bw_m")], btn_back]
+        kb = [[btn_edit], [InlineKeyboardButton(text="1 кегля", callback_data="b_bw_1"), InlineKeyboardButton(text="3 кегли", callback_data="b_bw_3")], btn_back]
     elif game == "mines":
         text = f"Рамиль\n💣 **Мины · выбери мины!**\n{DOTS}\n💸 Ставка: {user_data['bet']} mс"
-        kb = [[btn_edit], [InlineKeyboardButton(text="1", callback_data="sm_1"), InlineKeyboardButton(text="3", callback_data="sm_3"), InlineKeyboardButton(text="5", callback_data="sm_5")],
-              [InlineKeyboardButton(text="10", callback_data="sm_10"), InlineKeyboardButton(text="24", callback_data="sm_24")], btn_back]
+        kb = [[btn_edit], [InlineKeyboardButton(text="1", callback_data="sm_1"), InlineKeyboardButton(text="3", callback_data="sm_3"), InlineKeyboardButton(text="5", callback_data="sm_5")], btn_back]
     else: return
     await call.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
 
