@@ -11,7 +11,7 @@ ADMIN_TOKEN = "8034796055:AAFrpMOUowWvo6W3kGBsoMiq9RVjsaM2Qig"
 bot = Bot(token=GAME_TOKEN)
 dp = Dispatcher()
 
-# Имитация базы данных
+# Данные пользователя
 user_data = {"balance": 1000, "bet": 10}
 DOTS = "· · · · · · · · · · · · · · · · ·"
 
@@ -55,13 +55,16 @@ async def prepare_game(call: types.CallbackQuery):
         kb = [[InlineKeyboardButton(text="⚽ Гол - x1.6", callback_data="play_foot_anim")], [InlineKeyboardButton(text="🥅 Мимо - x2.4", callback_data="play_foot_anim")], btn_back]
     elif game == "darts":
         text = f"Рамиль\n🎯 **Дартс · выбери исход!**\n{DOTS}\n💸 Ставка: {user_data['bet']} mс"
-        kb = [[InlineKeyboardButton(text="🔴 Красное", callback_data="play_dart_anim"), InlineKeyboardButton(text="⚪ Белое", callback_data="play_dart_anim")], btn_back]
+        kb = [[InlineKeyboardButton(text="🔴 Красное", callback_data="play_dart_anim"), InlineKeyboardButton(text="⚪ Белое", callback_data="play_dart_anim")], 
+              [InlineKeyboardButton(text="🎯 Центр", callback_data="play_dart_anim"), InlineKeyboardButton(text="😟 Мимо", callback_data="play_dart_anim")], btn_back]
     elif game == "bowling":
         text = f"Рамиль\n🎳 **Боулинг · выбери исход!**\n{DOTS}\n💸 Ставка: {user_data['bet']} mс"
-        kb = [[InlineKeyboardButton(text="🎳 Бросок", callback_data="play_bowl_anim")], btn_back]
+        kb = [[InlineKeyboardButton(text="1 кегля", callback_data="play_bowl_anim"), InlineKeyboardButton(text="3 кегли", callback_data="play_bowl_anim")],
+              [InlineKeyboardButton(text="🎳 Страйк", callback_data="play_bowl_anim"), InlineKeyboardButton(text="😟 Мимо", callback_data="play_bowl_anim")], btn_back]
     elif game == "dice":
         text = f"Рамиль\n🎲 **Кубик · выбери режим!**\n{DOTS}\n💸 Ставка: {user_data['bet']} mс"
-        kb = [[InlineKeyboardButton(text="🎲 Бросить", callback_data="play_dice_anim")], btn_back]
+        kb = [[InlineKeyboardButton(text="1", callback_data="play_dice_anim"), InlineKeyboardButton(text="2", callback_data="play_dice_anim"), InlineKeyboardButton(text="3", callback_data="play_dice_anim")],
+              [InlineKeyboardButton(text="⚖️ Чётный x1.94", callback_data="play_dice_anim"), InlineKeyboardButton(text="🔰 Нечётный x1.94", callback_data="play_dice_anim")], btn_back]
     elif game == "slots":
         text = f"Рамиль\n🎰 **Барабан · испытай удачу!**\n{DOTS}\n💸 Ставка: {user_data['bet']} mс"
         kb = [[InlineKeyboardButton(text="🎰 Крутить", callback_data="play_slots_anim")], btn_back]
@@ -69,7 +72,7 @@ async def prepare_game(call: types.CallbackQuery):
 
     await call.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
 
-# --- ДВИЖОК АНИМАЦИЙ И МИНЫ ---
+# --- ЛОГИКА ИГР ---
 @dp.callback_query(F.data.startswith("play_"))
 async def play_engine(call: types.CallbackQuery):
     game_type = call.data.split("_")[1]
@@ -79,16 +82,16 @@ async def play_engine(call: types.CallbackQuery):
         return
 
     if game_type == "mines":
-        # Логика мин (упрощенная для примера)
-        if random.random() > 0.3:
+        # Логика Мины
+        if random.random() > 0.4:
             profit = round(user_data["bet"] * 1.5, 2)
             user_data["balance"] += profit
             await call.message.answer(f"💎 Вы нашли алмаз! +{profit} mc")
         else:
             user_data["balance"] -= user_data["bet"]
-            await call.message.answer(f"💣 БАБАХ! Вы подорвались.")
+            await call.message.answer(f"💣 БАБАХ! Вы подорвались на мине.")
     else:
-        # Логика анимаций
+        # Логика Анимаций
         emoji_map = {"bask": "🏀", "foot": "⚽", "dart": "🎯", "bowl": "🎳", "dice": "🎲", "slots": "🎰"}
         user_data["balance"] -= user_data["bet"]
         msg = await call.message.answer_dice(emoji=emoji_map.get(game_type, "🎲"))
@@ -96,7 +99,7 @@ async def play_engine(call: types.CallbackQuery):
         
         val = msg.dice.value
         win = False
-        if (game_type == "dice" and val >= 4) or (game_type in ["foot", "bask"] and val >= 3) or (val == 6):
+        if (game_type == "dice" and val >= 4) or (game_type in ["foot", "bask"] and val >= 3) or (val == 6) or (game_type == "slots" and val in [1, 22, 43, 64]):
             win = True
         
         if win:
