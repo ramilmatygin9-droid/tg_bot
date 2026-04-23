@@ -74,7 +74,7 @@ async def handle_messages(message: types.Message):
             await message.answer("❌ Введите число больше 0.")
         return
 
-    # ПОМОЩЬ
+    # ПОМОЩЬ (Сообщения уходят на ADMIN_TOKEN)
     if message.bot.id == bot.id and user_support_state.get(uid):
         username = f"@{message.from_user.username}" if message.from_user.username else "Нет"
         premium = "💎 Да" if message.from_user.is_premium else "Нет"
@@ -84,10 +84,10 @@ async def handle_messages(message: types.Message):
                f"🆔 ID: `{uid}`\n⭐️ Premium: {premium}\n{LINE}\n✉️ Текст: {message.text}")
         
         await admin_bot.send_message(MY_ID, sms, reply_markup=kb, parse_mode="Markdown")
-        await message.answer("✅ Сообщение доставлено! Ожидайте ответа.")
+        await message.answer("✅ Сообщение отправлено! Поддержка скоро ответит.")
         user_support_state[uid] = False
 
-    # Ответ админа
+    # Ответ админа (Пишется в боте помощи)
     elif message.bot.id == admin_bot.id and uid == MY_ID:
         if admin_reply_state.get(MY_ID):
             target = admin_reply_state[MY_ID]
@@ -95,7 +95,7 @@ async def handle_messages(message: types.Message):
                 await bot.send_message(target, f"✉️ **Ответ техподдержки:**\n\n{message.text}")
                 await message.answer(f"✅ Отправлено пользователю `{target}`")
                 del admin_reply_state[MY_ID]
-            except: await message.answer("❌ Ошибка отправки.")
+            except: await message.answer("❌ Ошибка отправки пользователю.")
 
 # --- CALLBACKS ---
 @dp.callback_query(F.data == "under_dev")
