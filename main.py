@@ -1,7 +1,7 @@
 import asyncio
 import random
 import logging
-from datetime import datetime # Добавили для работы с часами
+from datetime import datetime
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -9,7 +9,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 # --- НАСТРОЙКИ ---
 GAME_TOKEN = "8359920618:AAFpuDjkXwbArbuC3VtaevWMIYXuBamvSt0"
 ADMIN_TOKEN = "8034796055:AAFrpMOUowWvo6W3kGBsoMiq9RVjsaM2Qig"
-MY_ID = 846239258  # Твой ID
+MY_ID = 846239258 
 
 bot = Bot(token=GAME_TOKEN)
 admin_bot = Bot(token=ADMIN_TOKEN)
@@ -31,7 +31,7 @@ def main_kb():
             InlineKeyboardButton(text="🏀", callback_data="prep_basketball"),
             InlineKeyboardButton(text="⚽", callback_data="prep_football"),
             InlineKeyboardButton(text="🎯", callback_data="prep_darts"),
-            InlineKeyboardButton(text="🎳", callback_data="prep_bowling"),
+            InlineKeyboardButton(text=" bowling", callback_data="prep_bowling"),
             InlineKeyboardButton(text="🎲", callback_data="prep_dice"),
             InlineKeyboardButton(text="🎰", callback_data="prep_slots")
         ],
@@ -49,14 +49,14 @@ def main_kb():
     ])
 
 # --- ОБРАБОТКА КОМАНД ---
-@dp.message(Command("start"))
-async def cmd_start(message: types.Message):
-    # Получаем текущее время
+# ЗАМЕНЕНО: Теперь вместо /start используется /play
+@dp.message(Command("play"))
+async def cmd_play(message: types.Message):
     now = datetime.now().strftime("%H:%M:%S | %d.%m.%Y")
 
     if message.bot.token == ADMIN_TOKEN:
         if message.from_user.id == MY_ID:
-            await message.answer(f"✅ Бот поддержки запущен.\n🕒 Время: `{now}`", parse_mode="Markdown")
+            await message.answer(f"✅ Бот поддержки активен.\n🕒 Время: `{now}`", parse_mode="Markdown")
         return
 
     if message.bot.token == GAME_TOKEN:
