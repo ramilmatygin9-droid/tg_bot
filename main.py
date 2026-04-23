@@ -7,7 +7,7 @@ TOKEN = "8359920618:AAFpuDjkXwbArbuC3VtaevWMIYXuBamvSt0"
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# --- ЛИНИЯ ИЗ ТОЧЕК (КАК НА ФОТО) ---
+# --- ТОЧНЫЙ ДИЗАЙН ИЗ ФОТО ---
 DOTS = ". . . . . . . . . . . . . . . . . . ."
 
 def main_kb():
@@ -27,13 +27,14 @@ def main_kb():
         [InlineKeyboardButton(text="👤 Профиль", callback_data="profile")]
     ])
 
-# --- ОБРАБОТКА МЕНЮ ВЫБОРА ---
+# --- МЕНЮ ПОДГОТОВКИ ---
 
 @dp.callback_query(F.data.startswith("prep_"))
 async def prepare_game(call: types.CallbackQuery):
     game = call.data.split("_")[1]
     name = call.from_user.first_name
     
+    # Стилизация под скриншоты
     if game == "football":
         kb = [
             [InlineKeyboardButton(text="⚽ Гол - x1.6", callback_data="bet_football_goal")],
@@ -41,6 +42,14 @@ async def prepare_game(call: types.CallbackQuery):
             [InlineKeyboardButton(text="◀️ назад", callback_data="to_main")]
         ]
         text = f"**{name}**\n⚽ **Футбол · выбери исход!**\n{DOTS}\n💸 **Ставка: 10 m¢**"
+
+    elif game == "basketball":
+        kb = [
+            [InlineKeyboardButton(text="🏀 Попадание - x1.6", callback_data="bet_basketball_goal")],
+            [InlineKeyboardButton(text="🗑 Мимо - x2.4", callback_data="bet_basketball_miss")],
+            [InlineKeyboardButton(text="◀️ назад", callback_data="to_main")]
+        ]
+        text = f"**{name}**\n🏀 **Баскет · выбери исход!**\n{DOTS}\n💸 **Ставка: 10 m¢**"
 
     elif game == "darts":
         kb = [
@@ -69,18 +78,28 @@ async def prepare_game(call: types.CallbackQuery):
                 f"🔰 **Коэффициенты:**\n"
                 f"┕ 🎳 Страйк (x4.8)\n"
                 f"┕ 🎳 Сбить кегли (x1.4)")
-        
-    elif game == "basketball":
+
+    elif game == "dice":
         kb = [
-            [InlineKeyboardButton(text="🏀 Попадание - x1.6", callback_data="bet_basketball_goal")],
-            [InlineKeyboardButton(text="🗑 Мимо - x2.4", callback_data="bet_basketball_miss")],
+            [InlineKeyboardButton(text="🔢 Четное", callback_data="bet_dice_even"), 
+             InlineKeyboardButton(text="🔢 Нечетное", callback_data="bet_dice_odd")],
+            [InlineKeyboardButton(text="📈 Больше 3", callback_data="bet_dice_big"), 
+             InlineKeyboardButton(text="📉 Меньше 4", callback_data="bet_dice_small")],
             [InlineKeyboardButton(text="◀️ назад", callback_data="to_main")]
         ]
-        text = f"**{name}**\n🏀 **Баскет · выбери исход!**\n{DOTS}\n💸 **Ставка: 10 m¢**"
+        text = (f"**{name}**\n🎲 **Кубик · выбери исход!**\n{DOTS}\n"
+                f"💸 **Ставка: 10 m¢**\n\n"
+                f"🔰 **Коэффициенты:**\n"
+                f"┕ 🔢 Чет / Нечет (x1.9)\n"
+                f"┕ 📈 Бол / Мен (x2.0)")
+
+    elif game == "slots":
+        kb = [[InlineKeyboardButton(text="🎰 Крутить", callback_data="bet_slots_any")], [InlineKeyboardButton(text="◀️ назад", callback_data="to_main")]]
+        text = f"**{name}**\n🎰 **Слоты · удачи!**\n{DOTS}\n💸 **Ставка: 10 m¢**"
 
     await call.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode="Markdown")
 
-# --- ЛОГИКА РЕЗУЛЬТАТА ---
+# --- ЛОГИКА ИГРЫ ---
 
 @dp.callback_query(F.data.startswith("bet_"))
 async def play_game(call: types.CallbackQuery):
@@ -88,20 +107,28 @@ async def play_game(call: types.CallbackQuery):
     game_type = data[1]
     choice = data[2]
     
-    msg = await call.message.answer_dice(emoji={"football":"⚽","darts":"🎯","bowling":"🎳","basketball":"🏀","dice":"🎲","slots":"🎰"}[game_type])
+    emoji = {"football":"⚽","darts":"🎯","bowling":"🎳","basketball":"🏀","dice":"🎲","slots":"🎰"}[game_type]
+    msg = await call.message.answer_dice(emoji=emoji)
+    
     await asyncio.sleep(4)
     val = msg.dice.value
     win = False
 
-    # Логика побед
+    # Условия побед (базовые)
     if game_type == "football": win = (choice == "goal" and val >= 3) or (choice == "miss" and val < 3)
     elif game_type == "basketball": win = (choice == "goal" and val >= 4) or (choice == "miss" and val < 4)
     elif game_type == "bowling": win = (choice == "strike" and val == 6) or (choice == "any" and val > 1)
+    elif game_type == "dice": 
+        if choice == "even": win = (val % 2 == 0)
+        elif choice == "odd": win = (val % 2 != 0)
+        elif choice == "big": win = (val > 3)
+        elif choice == "small": win = (val < 4)
     elif game_type == "darts":
         if choice == "center": win = (val == 6)
         elif choice == "red": win = (val in [4, 5])
         elif choice == "white": win = (val in [2, 3])
         elif choice == "miss": win = (val == 1)
+    elif game_type == "slots": win = (val in [1, 22, 43, 64])
 
     res_title = "🥳 **Победа!**" if win else "❌ **Проигрыш**"
     
