@@ -13,11 +13,11 @@ bot = Bot(token=GAME_TOKEN)
 admin_bot = Bot(token=ADMIN_TOKEN)
 dp = Dispatcher()
 
-# Имитация базы данных пользователей
+# Имитация базы данных
 user_data = {"balance": 1000, "bet": 10}
 DOTS = "· · · · · · · · · · · · · · · · ·"
 
-# --- КЛАВИАТУРЫ ---
+# --- ГЛАВНОЕ МЕНЮ ---
 def main_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [
@@ -37,7 +37,67 @@ def main_kb():
         [InlineKeyboardButton(text="👤 Профиль", callback_data="profile")]
     ])
 
-# --- ОБРАБОТЧИКИ КОМАНД ---
+# --- ВЫБОР РЕЖИМА ДАРТС ---
+@dp.callback_query(F.data == "prep_darts")
+async def prepare_darts(call: types.CallbackQuery):
+    text = (
+        f"Рамиль\n🎯 **Дартс · выбери исход!**\n{DOTS}\n"
+        f"💸 Ставка: {user_data['bet']} mс\n\n"
+        f"🔰 **Коэффициенты:**\n"
+        f"🔴 Красное (x1.94)\n"
+        f"⚪ Белое (x2.9)\n"
+        f"🎯 Центр (x5.8)\n"
+        f"😟 Мимо (x5.8)"
+    )
+    kb = [
+        [InlineKeyboardButton(text="🔴 Красное", callback_data="play_darts_red"), 
+         InlineKeyboardButton(text="⚪ Белое", callback_data="play_darts_white")],
+        [InlineKeyboardButton(text="🎯 Центр", callback_data="play_darts_center"), 
+         InlineKeyboardButton(text="😟 Мимо", callback_data="play_darts_miss")],
+        [InlineKeyboardButton(text="◀️ назад", callback_data="to_main")]
+    ]
+    await call.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
+
+# --- ЛОГИКА ИГРЫ ДАРТС ---
+@dp.callback_query(F.data.startswith("play_darts_"))
+async def play_darts(call: types.CallbackQuery):
+    choice = call.data.split("_")[2] # red, white, center, miss
+    
+    if user_data["balance"] < user_data["bet"]:
+        await call.answer("❌ Недостаточно mс для броска!", show_alert=True)
+        return
+
+    # Имитация броска (шансы распределены согласно коэффициентам)
+    # 1-50: Красное, 51-80: Белое, 81-90: Центр, 91-100: Мимо
+    res_roll = random.randint(1, 100)
+    if res_roll <= 50: res = "red"
+    elif res_roll <= 80: res = "white"
+    elif res_roll <= 90: res = "center"
+    else: res = "miss"
+
+    win = (choice == res)
+    
+    # Коэффициенты со скриншота
+    coefs = {"red": 1.94, "white": 2.9, "center": 5.8, "miss": 5.8}
+    current_coef = coefs[choice]
+
+    if win:
+        profit = round(user_data["bet"] * current_coef, 2)
+        user_data["balance"] += (profit - user_data["bet"])
+        msg = f"🎯 **ПОПАДАНИЕ!**\n{DOTS}\nВы выбрали {choice} и выиграли {profit} mc! 🎉"
+    else:
+        user_data["balance"] -= user_data["bet"]
+        # Красивое описание промаха
+        names = {"red": "Красное", "white": "Белое", "center": "Центр", "miss": "Мимо ворот"}
+        msg = f"😟 **ПРОМАХ!**\n{DOTS}\nВы ставили на {names[choice]}, но дротик попал в {names[res]}. Ставка потеряна."
+
+    await call.message.answer(f"{msg}\n💰 Баланс: {user_data['balance']} mc")
+    await call.answer()
+    
+    # Сразу предлагаем сыграть еще раз, отправляя меню
+    await cmd_start(call.message)
+
+# --- ОБЩИЕ ФУНКЦИИ ---
 @dp.message(Command("start", "play"))
 async def cmd_start(message: types.Message):
     await message.answer(
@@ -45,98 +105,6 @@ async def cmd_start(message: types.Message):
         reply_markup=main_kb()
     )
 
-# --- ИНТЕРФЕЙС ИГР ---
-@dp.callback_query(F.data.startswith("prep_"))
-async def prepare_game(call: types.CallbackQuery):
-    game = call.data.split("_")[1]
-    btn_back = [InlineKeyboardButton(text="◀️ назад", callback_data="to_main")]
-    
-    if game == "basketball":
-        text = f"Рамиль\n🏀 **Баскетбол · выбери исход!**\n{DOTS}\n💸 Ставка: {user_data['bet']} mс"
-        kb = [
-            [InlineKeyboardButton(text="🏀 Гол - x1.6", callback_data="play_bask_goal")], 
-            [InlineKeyboardButton(text="🗑 Мимо - x2.4", callback_data="play_bask_miss")], 
-            btn_back
-        ]
-    elif game == "football":
-        text = f"Рамиль\n⚽ **Футбол · выбери исход!**\n{DOTS}\n💸 Ставка: {user_data['bet']} mс"
-        kb = [
-            [InlineKeyboardButton(text="⚽ Гол - x1.6", callback_data="play_foot_goal")], 
-            [InlineKeyboardButton(text="🥅 Мимо - x2.4", callback_data="play_foot_miss")], 
-            btn_back
-        ]
-    elif game == "dice":
-        text = f"Рамиль\n🎲 **Кубик · выбери режим!**\n{DOTS}\n💸 Ставка: {user_data['bet']} mс"
-        kb = [
-            [InlineKeyboardButton(text="1", callback_data="play_dice_1"), InlineKeyboardButton(text="2", callback_data="play_dice_2"), InlineKeyboardButton(text="3", callback_data="play_dice_3")],
-            [InlineKeyboardButton(text="4", callback_data="play_dice_4"), InlineKeyboardButton(text="5", callback_data="play_dice_5"), InlineKeyboardButton(text="6", callback_data="play_dice_6")],
-            [InlineKeyboardButton(text="⚖️ Чётный x1.94", callback_data="play_dice_even"), InlineKeyboardButton(text="🔰 Нечётный x1.94", callback_data="play_dice_odd")],
-            btn_back
-        ]
-    # Другие игры можно добавить по аналогии
-    else:
-        await call.answer("Игра в разработке", show_alert=True)
-        return
-
-    await call.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
-
-# --- ОБРАБОТЧИК ИГРОВОЙ ЛОГИКИ ---
-@dp.callback_query(F.data.startswith("play_"))
-async def play_engine(call: types.CallbackQuery):
-    data = call.data.split("_")
-    game_type = data[1] # bask, foot, dice
-    choice = data[2] # goal, miss, 1, 2, even...
-    
-    if user_data["balance"] < user_data["bet"]:
-        await call.answer("❌ Недостаточно средств!", show_alert=True)
-        return
-
-    win = False
-    result_text = ""
-    coef = 1.0
-
-    # ЛОГИКА БАСКЕТБОЛА
-    if game_type == "bask":
-        res = random.choice(["goal", "miss"])
-        win = (res == choice)
-        coef = 1.6 if choice == "goal" else 2.4
-        result_text = "🏀 Мяч в корзине! Чистый гол!" if res == "goal" else "🗑 Эх, мяч ударился об кольцо и вылетел..."
-
-    # ЛОГИКА ФУТБОЛА
-    elif game_type == "foot":
-        res = random.choice(["goal", "miss"])
-        win = (res == choice)
-        coef = 1.6 if choice == "goal" else 2.4
-        result_text = "⚽ ГООООЛ!" if res == "goal" else "🥅 Увы, мяч пролетел мимо ворот."
-
-    # ЛОГИКА КУБИКА
-    elif game_type == "dice":
-        res = random.randint(1, 6)
-        if choice.isdigit() and int(choice) == res: 
-            win = True
-            coef = 5.8
-        elif choice == "even" and res % 2 == 0: 
-            win = True
-            coef = 1.94
-        elif choice == "odd" and res % 2 != 0: 
-            win = True
-            coef = 1.94
-        result_text = f"🎲 Выпало число: {res}"
-
-    # Итоги
-    if win:
-        profit = round(user_data["bet"] * coef, 2)
-        user_data["balance"] += (profit - user_data["bet"])
-        await call.message.answer(f"🎉 {result_text}\nВы выиграли {profit} mc! 💰")
-    else:
-        user_data["balance"] -= user_data["bet"]
-        await call.message.answer(f"📉 {result_text}\nВы проиграли свою ставку. 😢")
-    
-    await call.answer()
-    # Возвращаемся в главное меню через пару секунд
-    await cmd_start(call.message)
-
-# --- НАЗАД ---
 @dp.callback_query(F.data == "to_main")
 async def back_to_main(call: types.CallbackQuery):
     await call.message.edit_text(
