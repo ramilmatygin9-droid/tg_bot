@@ -7,9 +7,9 @@ from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # --- НАСТРОЙКИ ---
-GAME_TOKEN = "8359920618:AAHKLw57b3LJ7MupDtL3hWP_Msl1SwTABSQ"
+GAME_TOKEN = "8359920618:AAHKLw57b3LJ7MupDtL3hWP_Msl1SwTABSQ" 
 ADMIN_TOKEN = "8034796055:AAFrpMOUowWvo6W3kGBsoMiq9RVjsaM2Qig"
-MY_ID = 846239258
+MY_ID = 846239258 
 
 bot = Bot(token=GAME_TOKEN)
 admin_bot = Bot(token=ADMIN_TOKEN)
@@ -36,7 +36,7 @@ def main_kb():
             InlineKeyboardButton(text="🎰", callback_data="prep_slots")
         ],
         [
-            InlineKeyboardButton(text="🚀 Быстрые", callback_data="under_dev"),
+            InlineKeyboardButton(text="💣 МИНЫ", callback_data="prep_mines"), # Новая кнопка
             InlineKeyboardButton(text="Режимы 💣", callback_data="under_dev")
         ],
         [InlineKeyboardButton(text="🏦 Банк", url="https://t.me/your_bot_link")],
@@ -49,11 +49,9 @@ def main_kb():
     ])
 
 # --- ОБРАБОТКА КОМАНД ---
-# ТЕПЕРЬ СЛУШАЕТ И START И PLAY
 @dp.message(Command("start", "play"))
 async def cmd_start(message: types.Message):
     now = datetime.now().strftime("%H:%M:%S | %d.%m.%Y")
-    
     if message.bot.token == GAME_TOKEN:
         text = (
             f"🎮 **ДАВАЙ НАЧНЕМ ИГРАТЬ!**\n\n"
@@ -64,7 +62,7 @@ async def cmd_start(message: types.Message):
         )
         await message.answer(text, reply_markup=main_kb(), parse_mode="Markdown")
 
-# --- ЛОГИКА СООБЩЕНИЙ ---
+# --- ЛОГИКА СООБЩЕНИЙ (Поддержка и Ставка) ---
 @dp.message()
 async def handle_messages(message: types.Message):
     uid = message.from_user.id
@@ -76,7 +74,7 @@ async def handle_messages(message: types.Message):
                 await message.answer(f"✅ Ставка изменена на **{user_data['bet']} руб.**", reply_markup=main_kb())
             return
         if user_support_state.get(uid):
-            kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="💬 Ответить", callback_data=f"adm_reply_{uid}")]])
+            kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="💬 Ответить", callback_data=f_adm_reply_{uid})]])
             sms = (f"🆘 **НОВОЕ ОБРАЩЕНИЕ**\n{LINE}\n👤 Имя: {message.from_user.first_name}\n"
                    f"🆔 ID: `{uid}`\n{LINE}\n✉️ Текст: {message.text}")
             try:
@@ -95,7 +93,18 @@ async def handle_messages(message: types.Message):
             except:
                 await message.answer("❌ Ошибка отправки пользователю.")
 
-# --- CALLBACKS ---
+# --- CALLBACKS (Базовые) ---
+@dp.callback_query(F.data == "profile")
+async def view_profile(call: types.CallbackQuery):
+    text = (
+        f"👤 **ВАШ ПРОФИЛЬ**\n{LINE}\n"
+        f"🆔 ID: `{call.from_user.id}`\n"
+        f"💰 Баланс: **{user_data['balance']} руб.**\n"
+        f"💸 Текущая ставка: **{user_data['bet']} руб.**\n"
+        f"📈 Уровень: **{user_data['level']}**\n{LINE}"
+    )
+    await call.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="◀️ Назад", callback_data="to_main")]]), parse_mode="Markdown")
+
 @dp.callback_query(F.data == "under_dev")
 async def dev_alert(call: types.CallbackQuery):
     await call.answer("🛠 В разработке...", show_alert=True)
@@ -112,16 +121,64 @@ async def help_init(call: types.CallbackQuery):
     await call.message.answer("📝 Напишите ваш вопрос для поддержки:")
     await call.answer()
 
-@dp.callback_query(F.data.startswith("adm_reply_"))
-async def adm_reply_callback(call: types.CallbackQuery):
-    if call.from_user.id == MY_ID:
-        admin_reply_state[MY_ID] = call.data.split("_")[2]
-        await call.message.answer("⌨️ Пишите текст ответа:")
-        await call.answer()
+# --- РЕЖИМ МИНЫ ---
+@dp.callback_query(F.data == "prep_mines")
+async def mines_choice(call: types.CallbackQuery):
+    header = f"👤 **{call.from_user.first_name}**\n"
+    text = f"{header}💣 **МИНЫ**\n{LINE}\nВыбери количество мин на поле (1-24):"
+    
+    # Кнопки выбора количества мин
+    btns = [3, 5, 10, 15, 20, 24]
+    kb = []
+    row = []
+    for b in btns:
+        row.append(InlineKeyboardButton(text=str(b), callback_data=f"start_mines_{b}"))
+        if len(row) == 3:
+            kb.append(row)
+            row = []
+    kb.append([InlineKeyboardButton(text="◀️ Назад", callback_data="to_main")])
+    await call.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode="Markdown")
 
+@dp.callback_query(F.data.startswith("start_mines_"))
+async def start_mines(call: types.CallbackQuery):
+    if user_data["balance"] < user_data["bet"]:
+        await call.answer("❌ Недостаточно средств!", show_alert=True); return
+    
+    count = int(call.data.split("_")[2])
+    # Генерируем поле 5x5 (всего 25 ячеек)
+    text = f"💣 **ИГРА НАЧАТА**\nМин: {count}\nСтавка: {user_data['bet']} руб.\n\nНажимай на ячейки! 👇"
+    
+    kb = []
+    for i in range(5):
+        row = []
+        for j in range(5):
+            row.append(InlineKeyboardButton(text="❓", callback_data=f"mine_click_{count}_{i*5+j}"))
+        kb.append(row)
+    
+    await call.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode="Markdown")
+
+# (Логика нажатия на мину упрощена для примера, чтобы не забивать код)
+@dp.callback_query(F.data.startswith("mine_click_"))
+async def mine_click(call: types.CallbackQuery):
+    data = call.data.split("_")
+    count = int(data[2])
+    # Шанс проигрыша зависит от кол-ва мин
+    if random.randint(1, 25) <= count:
+        user_data["balance"] -= user_data["bet"]
+        await call.message.edit_text(f"💥 **БУМ! Вы попали на мину.**\n💰 Баланс: {user_data['balance']} руб.", 
+                                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔄 Снова", callback_data="prep_mines")]]))
+    else:
+        win = int(user_data["bet"] * (1 + (count/10)))
+        user_data["balance"] += win - user_data["bet"]
+        await call.message.edit_text(f"💎 **ЧИСТО! Вы выиграли {win} руб.**\n💰 Баланс: {user_data['balance']} руб.", 
+                                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔄 Еще ячейку", callback_data=f"start_mines_{count}"), 
+                                                                                         InlineKeyboardButton(text="◀️ Забрать", callback_data="to_main")]]))
+
+# --- ПОДГОТОВКА ОСТАЛЬНЫХ ИГР (БЕЗ ИЗМЕНЕНИЙ) ---
 @dp.callback_query(F.data.startswith("prep_"))
 async def prepare_game(call: types.CallbackQuery):
     game = call.data.split("_")[1]
+    if game == "mines": return # Пропускаем, так как обработано выше
     header = f"👤 **{call.from_user.first_name}**\n"
     footer = f"{DOTS}\n💸 **Ставка: {user_data['bet']} руб.**"
     kb = []
@@ -189,7 +246,6 @@ async def back_to_main(call: types.CallbackQuery):
     await bot.send_message(call.from_user.id, f"🎮 **ГЛАВНОЕ МЕНЮ**\n💰 Баланс: {user_data['balance']} руб.", reply_markup=main_kb())
 
 async def main():
-    # Очистка старых сообщений при запуске, чтобы бот не глючил
     await bot.delete_webhook(drop_pending_updates=True)
     await admin_bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot, admin_bot)
