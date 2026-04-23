@@ -50,6 +50,12 @@ def main_kb():
 # --- ОБРАБОТКА КОМАНД ---
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
+    # Добавлен ответ для админ-бота, чтобы активировать связь
+    if message.bot.token == ADMIN_TOKEN:
+        if message.from_user.id == MY_ID:
+            await message.answer("✅ Админ-бот активирован. Сюда будут приходить сообщения.")
+        return
+
     if message.bot.token == GAME_TOKEN:
         text = (
             f"🎮 **ДАВАЙ НАЧНЕМ ИГРАТЬ!**\n\n"
@@ -79,7 +85,7 @@ async def handle_messages(message: types.Message):
             
             try:
                 await admin_bot.send_message(MY_ID, sms, reply_markup=kb, parse_mode="Markdown")
-                await message.answer("✅ Сообщение отправлено!") # Подтверждение отправки
+                await message.answer("✅ Сообщение отправлено!")
             except:
                 await message.answer("❌ Ошибка при отправке. Попробуйте позже.")
             
