@@ -50,8 +50,8 @@ def main_kb():
 # --- ОБРАБОТКА КОМАНД ---
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
-    # Проверяем, что команда пришла именно в игровой бот
-    if message.bot.id == bot.id:
+    # Ответ только если сообщение пришло в игровой бот
+    if message.bot.token == GAME_TOKEN:
         text = (
             f"🎮 **ДАВАЙ НАЧНЕМ ИГРАТЬ!**\n\n"
             f"💰 Баланс: **{user_data['balance']} руб.**\n"
@@ -77,21 +77,21 @@ async def change_bet_cmd(call: types.CallbackQuery):
 async def handle_messages(message: types.Message):
     uid = message.from_user.id
     
-    # 1. Изменение ставки
-    if message.bot.id == bot.id and change_bet_state.get(uid):
+    # 1. Логика изменения ставки
+    if message.bot.token == GAME_TOKEN and change_bet_state.get(uid):
         if message.text.isdigit():
             new_bet = int(message.text)
             if new_bet > 0:
                 user_data["bet"] = new_bet
                 await message.answer(f"✅ Ставка успешно изменена на **{new_bet} руб.**")
                 change_bet_state[uid] = False
-                await message.answer(f"🎮 **МЕНЮ**\n💰 Баланс: {user_data['balance']} руб.\n💸 Ставка: {user_data['bet']} руб.", reply_markup=main_kb())
+                await message.answer(f"🎮 **ГЛАВНОЕ МЕНЮ**\n💰 Баланс: {user_data['balance']} руб.\n💸 Ставка: {user_data['bet']} руб.", reply_markup=main_kb())
             else: await message.answer("❌ Ставка должна быть больше 0.")
         else: await message.answer("❌ Введите число.")
         return
 
-    # 2. ПОМОЩЬ (Отправка админу)
-    if message.bot.id == bot.id and user_support_state.get(uid):
+    # 2. ПОМОЩЬ (Отправка админу с Username и Статусом)
+    if message.bot.token == GAME_TOKEN and user_support_state.get(uid):
         username = f"@{message.from_user.username}" if message.from_user.username else "Нет"
         is_premium = "⭐️ Premium" if message.from_user.is_premium else "Обычный"
         kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="💬 Ответить", callback_data=f"adm_reply_{uid}")]])
@@ -104,23 +104,16 @@ async def handle_messages(message: types.Message):
         user_support_state[uid] = False
 
     # 3. Ответ админа (из админ-бота)
-    elif message.bot.id == admin_bot.id and uid == MY_ID:
+    elif message.bot.token == ADMIN_TOKEN and uid == MY_ID:
         if admin_reply_state.get(MY_ID):
             target_id = admin_reply_state[MY_ID]
             try:
                 await bot.send_message(target_id, f"✉️ **Ответ техподдержки:**\n\n{message.text}")
                 await message.answer(f"✅ Ответ отправлен пользователю `{target_id}`")
                 del admin_reply_state[MY_ID]
-            except: await message.answer("❌ Ошибка при отправке пользователю.")
+            except: await message.answer("❌ Ошибка при отправке.")
 
-# --- ОСТАЛЬНАЯ ЛОГИКА ---
-@dp.callback_query(F.data.startswith("adm_reply_"))
-async def adm_reply_callback(call: types.CallbackQuery):
-    if call.from_user.id == MY_ID:
-        admin_reply_state[MY_ID] = call.data.split("_")[2]
-        await call.message.answer(f"⌨️ Введите текст ответа:")
-        await call.answer()
-
+# --- ПОДГОТОВКА ИГР (С ИМЕНЕМ) ---
 @dp.callback_query(F.data.startswith("prep_"))
 async def prepare_game(call: types.CallbackQuery):
     game = call.data.split("_")[1]
@@ -148,6 +141,7 @@ async def prepare_game(call: types.CallbackQuery):
     kb.append([InlineKeyboardButton(text="◀️ назад", callback_data="to_main")])
     await call.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode="Markdown")
 
+# --- ЛОГИКА ИГРЫ ---
 @dp.callback_query(F.data.startswith("bet_"))
 async def play_game(call: types.CallbackQuery):
     if user_data["balance"] < user_data["bet"]:
@@ -162,10 +156,11 @@ async def play_game(call: types.CallbackQuery):
     await msg.reply(f"**{call.from_user.first_name}**, {'🥳 Победа!' if win else '❌ Проигрыш'}\n💰 Баланс: {user_data['balance']} руб.", 
                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔄 Снова", callback_data=f"prep_{game_type}"), InlineKeyboardButton(text="◀️ Меню", callback_data="to_main")]]))
 
+# --- СИСТЕМНЫЕ ---
 @dp.callback_query(F.data == "profile")
 async def show_profile(call: types.CallbackQuery):
-    await call.message.edit_text(f"👤 **{call.from_user.first_name}**\n💰 Баланс: {user_data['balance']} руб.\n💸 Ставка: {user_data['bet']} руб.", 
-                                reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="◀️ назад", callback_data="to_main")]]))
+    text = f"👤 **{call.from_user.first_name}**\n💰 Баланс: {user_data['balance']} руб.\n💸 Ставка: {user_data['bet']} руб."
+    await call.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="◀️ назад", callback_data="to_main")]]))
 
 @dp.callback_query(F.data == "to_main")
 async def back_to_main(call: types.CallbackQuery):
@@ -177,6 +172,13 @@ async def ask_help(call: types.CallbackQuery):
     user_support_state[call.from_user.id] = True
     await call.message.answer("📝 Напишите ваше сообщение поддержке:")
     await call.answer()
+
+@dp.callback_query(F.data.startswith("adm_reply_"))
+async def adm_reply_callback(call: types.CallbackQuery):
+    if call.from_user.id == MY_ID:
+        admin_reply_state[MY_ID] = call.data.split("_")[2]
+        await call.message.answer(f"⌨️ Пишите ответ:")
+        await call.answer()
 
 async def main():
     await dp.start_polling(bot, admin_bot)
