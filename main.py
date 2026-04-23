@@ -7,7 +7,6 @@ TOKEN = "8359920618:AAFpuDjkXwbArbuC3VtaevWMIYXuBamvSt0"
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# --- КОНСТАНТЫ ДИЗАЙНА ---
 DOTS = ". . . . . . . . . . . . . . . . . . ."
 LINE = "────────────────"
 
@@ -69,17 +68,14 @@ async def prepare_game(call: types.CallbackQuery):
     res["kb"].append([InlineKeyboardButton(text="◀️ назад", callback_data="to_main")])
     await call.message.edit_text(res["text"], reply_markup=InlineKeyboardMarkup(inline_keyboard=res["kb"]), parse_mode="Markdown")
 
-# --- ЛОГИКА ИГРЫ И РЕЗУЛЬТАТА ---
+# --- РЕЗУЛЬТАТ ИГРЫ ---
 @dp.callback_query(F.data.startswith("bet_"))
 async def play_game(call: types.CallbackQuery):
     data = call.data.split("_")
     game_type, choice = data[1], data[2]
-    name = call.from_user.first_name
     
-    # Удаляем меню выбора, чтобы не мешало анимации
     await call.message.delete()
     
-    # Отправляем анимацию
     emoji = {"football":"⚽","darts":"🎯","bowling":"🎳","basketball":"🏀","dice":"🎲","slots":"🎰"}[game_type]
     msg = await call.bot.send_dice(call.message.chat.id, emoji=emoji)
     
@@ -88,51 +84,52 @@ async def play_game(call: types.CallbackQuery):
     win = False
     coef = 0.0
 
-    # ТОЧНАЯ ПРОВЕРКА ДЛЯ КАЖДОЙ ИГРЫ
+    # Проверка условий
     if game_type == "basketball":
-        is_goal = val >= 4 # 4 и 5 в баскете - это гол
+        is_goal = val >= 4
         win = (choice == "goal" and is_goal) or (choice == "miss" and not is_goal)
         coef = 1.6 if choice == "goal" else 2.4
     elif game_type == "football":
-        is_goal = val >= 3 # 3, 4, 5 в футболе - это гол
+        is_goal = val >= 3
         win = (choice == "goal" and is_goal) or (choice == "miss" and not is_goal)
         coef = 1.6 if choice == "goal" else 2.4
     elif game_type == "bowling":
         is_strike = (val == 6)
         win = (choice == "strike" and is_strike) or (choice == "any" and val > 1 and not is_strike)
         coef = 4.8 if choice == "strike" else 1.4
-    elif game_type == "darts":
-        if choice == "center": win = (val == 6); coef = 5.8
-        elif choice == "red": win = (val in [4, 5]); coef = 1.94
-        elif choice == "white": win = (val in [2, 3]); coef = 2.9
-        elif choice == "miss": win = (val == 1); coef = 5.8
     elif game_type == "dice":
         if choice == "even": win = (val % 2 == 0); coef = 1.9
         elif choice == "odd": win = (val % 2 != 0); coef = 1.9
         elif choice == "big": win = (val > 3); coef = 2.0
         elif choice == "small": win = (val < 4); coef = 2.0
+    elif game_type == "darts":
+        if choice == "center": win = (val == 6); coef = 5.8
+        elif choice == "red": win = (val in [4, 5]); coef = 1.94
+        elif choice == "white": win = (val in [2, 3]); coef = 2.9
+        elif choice == "miss": win = (val == 1); coef = 5.8
     elif game_type == "slots":
         win = (val in [1, 22, 43, 64]); coef = 10.0
 
-    # ФОРМИРУЕМ ОТВЕТ
     status = "🥳 **Победа!**" if win else "❌ **Проигрыш**"
     profit = int(10 * coef) if win else 0
     res_emoji = "✅" if win else "❌"
     
     result_text = (
-        f"**{name}**\n"
+        f"**{call.from_user.first_name}**\n"
         f"{status}\n"
         f"{LINE}\n"
         f"💰 Выигрыш: {profit} m¢ {res_emoji}\n"
         f"🎲 Результат: {val}"
     )
 
+    # КНОПКИ В ОДИН РЯД КАК НА ФОТО
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔄 играть снова", callback_data=f"prep_{game_type}")],
-        [InlineKeyboardButton(text="◀️ в меню", callback_data="to_main")]
+        [
+            InlineKeyboardButton(text="🔄 играть снова", callback_data=f"prep_{game_type}"),
+            InlineKeyboardButton(text="◀️ в меню", callback_data="to_main")
+        ]
     ])
 
-    # Отправляем результат ответным сообщением к анимации
     await msg.reply(result_text, reply_markup=kb, parse_mode="Markdown")
 
 @dp.message(Command("start"))
