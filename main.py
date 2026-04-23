@@ -82,7 +82,6 @@ async def play_engine(call: types.CallbackQuery):
         return
 
     if game_type == "mines":
-        # Логика Мины
         if random.random() > 0.4:
             profit = round(user_data["bet"] * 1.5, 2)
             user_data["balance"] += profit
@@ -91,7 +90,6 @@ async def play_engine(call: types.CallbackQuery):
             user_data["balance"] -= user_data["bet"]
             await call.message.answer(f"💣 БАБАХ! Вы подорвались на мине.")
     else:
-        # Логика Анимаций
         emoji_map = {"bask": "🏀", "foot": "⚽", "dart": "🎯", "bowl": "🎳", "dice": "🎲", "slots": "🎰"}
         user_data["balance"] -= user_data["bet"]
         msg = await call.message.answer_dice(emoji=emoji_map.get(game_type, "🎲"))
@@ -110,7 +108,8 @@ async def play_engine(call: types.CallbackQuery):
 
     await cmd_start(call.message)
 
-@dp.message(Command("start"))
+# --- ОБРАБОТКА КОМАНД (ИСПРАВЛЕНО: ДОБАВЛЕН /play) ---
+@dp.message(Command("start", "play"))
 async def cmd_start(message: types.Message):
     await message.answer(f"🎮 **ГЛАВНОЕ МЕНЮ**\n💰 Баланс: {user_data['balance']} mс", reply_markup=main_kb())
 
