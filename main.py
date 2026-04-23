@@ -29,11 +29,24 @@ LINE = "────────────────"
 # --- КЛАВИАТУРЫ ---
 def main_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🏀", callback_data="prep_basketball"), InlineKeyboardButton(text="⚽", callback_data="prep_football"), InlineKeyboardButton(text="🎯", callback_data="prep_darts"), InlineKeyboardButton(text=" bowling", callback_data="prep_bowling"), InlineKeyboardButton(text="🎲", callback_data="prep_dice"), InlineKeyboardButton(text="🎰", callback_data="prep_slots")],
-        [InlineKeyboardButton(text="💣 МИНЫ", callback_data="prep_mines"), InlineKeyboardButton(text="🚀 Быстрые", callback_data="under_dev")],
+        [
+            InlineKeyboardButton(text="🏀", callback_data="prep_basketball"),
+            InlineKeyboardButton(text="⚽", callback_data="prep_football"),
+            InlineKeyboardButton(text="🎯", callback_data="prep_darts"),
+            InlineKeyboardButton(text=" bowling", callback_data="prep_bowling"),
+            InlineKeyboardButton(text="🎲", callback_data="prep_dice"),
+            InlineKeyboardButton(text="🎰", callback_data="prep_slots")
+        ],
+        [
+            InlineKeyboardButton(text="💣 МИНЫ", callback_data="prep_mines"),
+            InlineKeyboardButton(text="🚀 Быстрые", callback_data="under_dev")
+        ],
         [InlineKeyboardButton(text="🏦 Банк", url="https://t.me/your_bot_link")],
         [InlineKeyboardButton(text="✏️ Изменить ставку", callback_data="change_bet")],
-        [InlineKeyboardButton(text="🆘 Помощь", callback_data="ask_help"), InlineKeyboardButton(text="👤 Профиль", callback_data="profile")],
+        [
+            InlineKeyboardButton(text="🆘 Помощь", callback_data="ask_help"),
+            InlineKeyboardButton(text="👤 Профиль", callback_data="profile")
+        ],
         [InlineKeyboardButton(text="💳 Вывод", callback_data="under_dev")]
     ])
 
@@ -69,7 +82,6 @@ async def start_mines_game(call: types.CallbackQuery):
     count = int(call.data.split("_")[2])
     uid = call.from_user.id
     
-    # Генерация поля: 0 - пусто, 1 - мина
     field = [0]*25
     mines_pos = random.sample(range(25), count)
     for p in mines_pos: field[p] = 1
@@ -81,7 +93,6 @@ async def render_mines(call: types.CallbackQuery, uid: int):
     game = active_mines[uid]
     opened_count = len(game["opened"])
     
-    # Расчет множителя (упрощенно как на скрине)
     coef = round(1 + (opened_count * (game["count"] / 10)), 2)
     next_coefs = " → ".join([f"x{round(coef + (i * 0.07), 2)}" for i in range(1, 6)])
     
@@ -127,14 +138,14 @@ async def mine_click(call: types.CallbackQuery):
                 elif game["field"][cur] == 1: row.append(InlineKeyboardButton(text="💣", callback_data="ignore"))
                 else: row.append(InlineKeyboardButton(text="💎", callback_data="ignore"))
             kb.append(row)
-        kb.append([InlineKeyboardButton(text=f"🔄 Повторить · {game['bet']} руб.", callback_data=f"st_m_{game['count'] Black")])
+        kb.append([InlineKeyboardButton(text=f"🔄 Повторить · {game['bet']} руб.", callback_data=f"st_m_{game['count']}")])
         kb.append([InlineKeyboardButton(text="◀️ назад", callback_data="to_main"), InlineKeyboardButton(text="Честность 🔑", callback_data="ignore")])
         
         await call.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
         del active_mines[uid]
-    else: # ПРОДОЛЖАЕМ
+    else:
         game["opened"].append(idx)
-        if len(game["opened"]) + game["count"] == 25: # Все открыл
+        if len(game["opened"]) + game["count"] == 25:
             await mines_take(call)
         else:
             await render_mines(call, uid)
@@ -154,7 +165,7 @@ async def mines_take(call: types.CallbackQuery):
 # --- ОСТАЛЬНОЙ КОД (БЕЗ ИЗМЕНЕНИЙ) ---
 @dp.callback_query(F.data == "to_main")
 async def back_to_main(call: types.CallbackQuery):
-    await call.message.edit_text(f"🎮 **ГЛАВНОЕ МЕНЮ**\n💰 Баланс: {user_data['balance']} руб.", reply_markup=main_kb())
+    await bot.send_message(call.from_user.id, f"🎮 **ГЛАВНОЕ МЕНЮ**\n💰 Баланс: {user_data['balance']} руб.", reply_markup=main_kb())
 
 @dp.callback_query(F.data == "profile")
 async def view_profile(call: types.CallbackQuery):
