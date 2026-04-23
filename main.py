@@ -10,8 +10,8 @@ GAME_TOKEN = "8359920618:AAFpuDjkXwbArbuC3VtaevWMIYXuBamvSt0"
 ADMIN_TOKEN = "8610751877:AAG4eHS_knuJ-tFuVVfSIXkOC2AJxIdC990"
 MY_ID = 8462392581 
 
-bot = Bot(token=GAME_TOKEN)
-admin_bot = Bot(token=ADMIN_TOKEN)
+bot = Bot(token=8359920618:AAFpuDjkXwbArbuC3VtaevWMIYXuBamvSt0)
+admin_bot = Bot(token=8610751877:AAG4eHS_knuJ-tFuVVfSIXkOC2AJxIdC990)
 dp = Dispatcher()
 
 # Данные пользователя
