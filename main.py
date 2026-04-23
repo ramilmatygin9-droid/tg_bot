@@ -9,131 +9,124 @@ TOKEN = "8359920618:AAFpuDjkXwbArbuC3VtaevWMIYXuBamvSt0"
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# Временная база данных
-user_db = {}
-
-# --- ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ---
+# База данных состояний игры
+games = {}
 
 def get_header(user: types.User):
-    uid = user.id
-    if uid not in user_db:
-        user_db[uid] = {"balance": 1000, "lvl": 1}
-    u = user_db[uid]
-    return (f"👤 {user.first_name} | ID: `{uid}`\n"
-            f"🏆 Ваш уровень: {u['lvl']}\n"
-            f"💰 Баланс: {u['balance']} m¢\n"
+    return (f"👤 {user.first_name} | ID: `{user.id}`\n"
+            f"🏆 Ваш уровень: 1\n"
+            f"💰 Баланс: 1000 m¢\n"
             f"────────────────")
 
-# --- ГЛАВНОЕ МЕНЮ (6 кнопок + быстрые + режимы + профиль) ---
+# --- ГЛАВНОЕ МЕНЮ ---
 def main_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🏀", callback_data="g_basket"), 
-         InlineKeyboardButton(text="⚽", callback_data="g_foot"),
-         InlineKeyboardButton(text="🎯", callback_data="g_darts"), 
-         InlineKeyboardButton(text="🎳", callback_data="g_bowl"),
-         InlineKeyboardButton(text="🎲", callback_data="g_dice"), 
-         InlineKeyboardButton(text="🎰", callback_data="g_slots")],
-        [InlineKeyboardButton(text="🚀 Быстрые", callback_data="m_fast"), 
-         InlineKeyboardButton(text="Режимы 💣", callback_data="m_modes")],
-        [InlineKeyboardButton(text="👤 Профиль", callback_data="profile")]
+        [InlineKeyboardButton(text="🏀", callback_data="g_b"), InlineKeyboardButton(text="⚽", callback_data="g_f"),
+         InlineKeyboardButton(text="🎯", callback_data="g_d"), InlineKeyboardButton(text="🎳", callback_data="g_bw"),
+         InlineKeyboardButton(text="🎲", callback_data="g_dice"), InlineKeyboardButton(text="🎰", callback_data="g_s")],
+        [InlineKeyboardButton(text="🚀 Быстрые", callback_data="m_fast"), InlineKeyboardButton(text="Режимы 💣", callback_data="m_modes")]
     ])
 
-# --- МЕНЮ БЫСТРЫХ ИГР (КАК НА ВИДЕО) ---
-def fast_menu_kb():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎡 Рул. рулетка", callback_data="g_roulette"), 
-         InlineKeyboardButton(text="🎰 Монета", callback_data="g_coin")],
-        [InlineKeyboardButton(text="🎯 Дартс", callback_data="g_darts"), 
-         InlineKeyboardButton(text="🎲 Кубик", callback_data="g_dice")],
-        [InlineKeyboardButton(text="💣 Мины", callback_data="prep_mines"), 
-         InlineKeyboardButton(text="🚀 Краш", callback_data="g_crash")],
-        [InlineKeyboardButton(text="🎣 Рыбалка", callback_data="g_fish"), 
-         InlineKeyboardButton(text="🎰 Слоты", callback_data="g_slots")],
+# --- МЕНЮ БЫСТРЫХ ИГР ---
+@dp.callback_query(F.data == "m_fast")
+async def fast_menu(call: types.CallbackQuery):
+    kb = [
+        [InlineKeyboardButton(text="🎡 Рулетка", callback_data="none"), InlineKeyboardButton(text="🎰 Монета", callback_data="none")],
+        [InlineKeyboardButton(text="💣 Мины", callback_data="prep_mines"), InlineKeyboardButton(text="🚀 Краш", callback_data="none")],
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="to_main")]
-    ])
+    ]
+    await call.message.edit_text(f"{get_header(call.from_user)}\n🚀 **Быстрые игры**", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode="Markdown")
 
-# --- МЕНЮ ВЫБОРА МИН (3, 4, 5, 10, 11, 12) ---
-def mines_setup_kb():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💣 3", callback_data="st_m_3"), 
-         InlineKeyboardButton(text="💣 4", callback_data="st_m_4"), 
-         InlineKeyboardButton(text="💣 5", callback_data="st_m_5")],
-        [InlineKeyboardButton(text="💣 10", callback_data="st_m_10"), 
-         InlineKeyboardButton(text="💣 11", callback_data="st_m_11"), 
-         InlineKeyboardButton(text="💣 12", callback_data="st_m_12")],
+# --- ВЫБОР КОЛИЧЕСТВА МИН ---
+@dp.callback_query(F.data == "prep_mines")
+async def setup_mines(call: types.CallbackQuery):
+    kb = [
+        [InlineKeyboardButton(text="💣 3", callback_data="st_m_3"), InlineKeyboardButton(text="💣 5", callback_data="st_m_5"), InlineKeyboardButton(text="💣 10", callback_data="st_m_10")],
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="m_fast")]
-    ])
+    ]
+    await call.message.edit_text(f"{get_header(call.from_user)}\n💣 **Мины**\nВыбери количество бомб:", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode="Markdown")
 
-# --- ОБРАБОТЧИКИ НАВИГАЦИИ ---
+# --- ГЕНЕРАЦИЯ ПОЛЯ 5х5 ---
+def create_mines_kb(uid):
+    game = games[uid]
+    kb = []
+    for y in range(5):
+        row = []
+        for x in range(5):
+            pos = f"{x}_{y}"
+            if pos in game['open']:
+                row.append(InlineKeyboardButton(text="💎", callback_data="none"))
+            else:
+                row.append(InlineKeyboardButton(text="🔹", callback_data=f"click_{pos}"))
+        kb.append(row)
+    
+    kb.append([InlineKeyboardButton(text=f"📥 Забрать {game['current_win']} m¢", callback_data="m_cashout")])
+    return InlineKeyboardMarkup(inline_keyboard=kb)
 
-@dp.message(Command("start"))
-async def cmd_start(message: types.Message):
-    await message.answer(get_header(message.from_user), reply_markup=main_kb(), parse_mode="Markdown")
+# --- СТАРТ ИГРЫ МИНЫ ---
+@dp.callback_query(F.data.startswith("st_m_"))
+async def start_mines(call: types.CallbackQuery):
+    count = int(call.data.split("_")[2])
+    uid = call.from_user.id
+    
+    # Генерируем случайные мины
+    all_pos = [f"{x}_{y}" for x in range(5) for y in range(5)]
+    mine_pos = random.sample(all_pos, count)
+    
+    games[uid] = {
+        "mines": mine_pos,
+        "open": [],
+        "m_count": count,
+        "current_win": 10,
+        "hash": hashlib.sha256(str(random.random()).encode()).hexdigest()[:12]
+    }
+    
+    await call.message.edit_text(
+        f"{get_header(call.from_user)}\n💣 **Игра началась!**\nМин: {count}\n🛡 Hash: `{games[uid]['hash']}`",
+        reply_markup=create_mines_kb(uid),
+        parse_mode="Markdown"
+    )
+
+# --- КЛИК ПО ЯЧЕЙКЕ ---
+@dp.callback_query(F.data.startswith("click_"))
+async def handle_click(call: types.CallbackQuery):
+    uid = call.from_user.id
+    if uid not in games: return
+    
+    pos = call.data.split("_")[1] + "_" + call.data.split("_")[2]
+    game = games[uid]
+    
+    if pos in game['mines']:
+        # ВЗРЫВ
+        del games[uid]
+        await call.message.edit_text(f"{get_header(call.from_user)}\n💥 **БА-БАХ! Вы подорвались!**", 
+                                     reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔄 Попробовать снова", callback_data="prep_mines")]]), 
+                                     parse_mode="Markdown")
+    else:
+        # АЛМАЗ
+        game['open'].append(pos)
+        game['current_win'] = int(game['current_win'] * 1.5) # Множитель за каждый алмаз
+        await call.message.edit_reply_markup(reply_markup=create_mines_kb(uid))
+
+# --- КЭШАУТ (ЗАБРАТЬ ДЕНЬГИ) ---
+@dp.callback_query(F.data == "m_cashout")
+async def cashout(call: types.CallbackQuery):
+    uid = call.from_user.id
+    if uid not in games: return
+    win = games[uid]['current_win']
+    del games[uid]
+    await call.message.edit_text(f"{get_header(call.from_user)}\n💰 **Выигрыш забран!**\nВы получили: {win} m¢", 
+                                 reply_markup=main_kb(), parse_mode="Markdown")
 
 @dp.callback_query(F.data == "to_main")
 async def to_main(call: types.CallbackQuery):
     await call.message.edit_text(get_header(call.from_user), reply_markup=main_kb(), parse_mode="Markdown")
 
-@dp.callback_query(F.data == "m_fast")
-async def open_fast(call: types.CallbackQuery):
-    await call.message.edit_text(f"{get_header(call.from_user)}\n🚀 **Быстрые игры**", reply_markup=fast_menu_kb(), parse_mode="Markdown")
+@dp.message(Command("start"))
+async def start(message: types.Message):
+    await message.answer(get_header(message.from_user), reply_markup=main_kb(), parse_mode="Markdown")
 
-@dp.callback_query(F.data == "prep_mines")
-async def open_mines_prep(call: types.CallbackQuery):
-    await call.message.edit_text(f"{get_header(call.from_user)}\n💣 **Мины**\nВыбери количество бомб на поле:", reply_markup=mines_setup_kb(), parse_mode="Markdown")
-
-# --- ЛОГИКА ИГРЫ МИНЫ ---
-
-@dp.callback_query(F.data.startswith("st_m_"))
-async def start_mines_game(call: types.CallbackQuery):
-    count = int(call.data.split("_")[2])
-    h = hashlib.sha256(str(random.random()).encode()).hexdigest()[:12]
-    
-    # Сетка 5x5
-    kb_list = []
-    for _ in range(5):
-        kb_list.append([InlineKeyboardButton(text="🔹", callback_data="mine_click") for _ in range(5)])
-    kb_list.append([InlineKeyboardButton(text=f"📥 Забрать (x1.00)", callback_data="m_cashout")])
-    kb_list.append([InlineKeyboardButton(text="⬅️ Выход", callback_data="prep_mines")])
-    
-    text = (f"{get_header(call.from_user)}\n"
-            f"💣 **Игра началась!**\n"
-            f"Мин на поле: `{count}`\n"
-            f"🛡 Hash: `{h}...`\n"
-            f"────────────────\n"
-            f"Удачи, не подорвись!")
-    
-    await call.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_list), parse_mode="Markdown")
-
-# --- ЛОГИКА ОСТАЛЬНЫХ КНОПОК (DICE) ---
-
-@dp.callback_query(F.data.in_(["g_basket", "g_foot", "g_dice", "g_slots", "g_bowl", "g_darts"]))
-async def play_dice_game(call: types.CallbackQuery):
-    game_emojis = {
-        "g_basket": "🏀", "g_foot": "⚽", "g_dice": "🎲", 
-        "g_slots": "🎰", "g_bowl": "🎳", "g_darts": "🎯"
-    }
-    emoji = game_emojis[call.data]
-    
-    # Эффект броска
-    dice = await call.message.answer_dice(emoji=emoji)
-    await asyncio.sleep(3.5) # Ждем анимацию
-    
-    # Результат (простая логика выигрыша)
-    is_win = dice.dice.value >= 4 if emoji != "🎰" else dice.dice.value in [1, 22, 43, 64]
-    
-    if is_win:
-        user_db[call.from_user.id]["balance"] += 100
-        result = "🥳 **Победа!**"
-    else:
-        user_db[call.from_user.id]["balance"] -= 50
-        result = "❌ **Проигрыш!**"
-        
-    await call.message.answer(f"{get_header(call.from_user)}\n{result}\nРезультат: {dice.dice.value}", reply_markup=main_kb(), parse_mode="Markdown")
-
-# --- ЗАПУСК ---
 async def main():
-    await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
