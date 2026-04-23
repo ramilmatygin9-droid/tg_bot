@@ -1,41 +1,68 @@
-import random
-from aiogram import Bot, Dispatcher, types
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram import F
 
-# Вставь свой токен
+from import asyncio
+import random
+from aiogram import Bot, Dispatcher, types, F
+from aiogram.filters import Command
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+# Твой токен, который ты дал
 TOKEN = '8359920618:AAFpuDjkXwbArbuC3VtaevWMIYXuBamvSt0'
+
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# Функция для создания сетки 5x5
-def get_mines_kb(signal=False):
-    # Если signal=True, помечаем рандомные 3 клетки звездочкой
-    marked_cells = random.sample(range(25), 3) if signal else []
+# Функция для генерации клавиатуры с «сигналом»
+def get_mines_grid(show_signal=False):
+    # Генерируем 3 случайных места для «звезд» (сигналов)
+    signal_indices = random.sample(range(25), 3) if show_signal else []
     
     buttons = []
     row = []
+    
     for i in range(25):
-        text = "⭐" if i in marked_cells else "🔹"
-        row.append(InlineKeyboardButton(text=text, callback_data="empty"))
-        if len(row) == 5:
+        # Если это сигнал — ставим звезду, если нет — синий квадрат
+        char = "⭐" if i in signal_indices else "🟦"
+        row.append(InlineKeyboardButton(text=char, callback_data="none"))
+        
+        if len(row) == 5: # Делаем ряды по 5 кнопок
             buttons.append(row)
             row = []
+            
+    # Добавляем главную кнопку под сеткой
+    buttons.append([InlineKeyboardButton(text="🚀 ПОЛУЧИТЬ СИГНАЛ", callback_data="generate_signal")])
     
-    # Кнопка для генерации нового сигнала
-    buttons.append([InlineKeyboardButton(text="🚀 ПОЛУЧИТЬ СИГНАЛ", callback_data="get_signal")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
-@dp.message(F.text == "/start")
-async def cmd_start(message: types.Message):
-    await message.answer("Привет! Нажми на кнопку ниже, чтобы получить сигнал для Mines:", 
-                         reply_markup=get_mines_kb())
+# Хэндлер на команду /start
+@dp.message(Command("start"))
+async def start_cmd(message: types.Message):
+    await message.answer(
+        f"🤖 **Привет, {message.from_user.first_name}!**\n\n"
+        "Я бот-аналитик для игры Mines.\n"
+        "Нажми на кнопку ниже, чтобы я рассчитал выигрышную комбинацию.",
+        reply_markup=get_mines_grid(),
+        parse_mode="Markdown"
+    )
 
-@dp.callback_query(F.data == "get_signal")
-async def send_signal(callback: types.Callback_query):
-    await callback.message.edit_text("⚡️ Сигнал сформирован:", 
-                                     reply_markup=get_mines_kb(signal=True))
+# Хэндлер для кнопки генерации
+@dp.callback_query(F.data == "generate_signal")
+async def handle_signal(call: types.CallbackQuery):
+    # Редактируем сообщение, показывая новые «звезды»
+    await call.message.edit_text(
+        "✅ **Сигнал успешно сгенерирован!**\n"
+        "Рекомендуем ставить на эти ячейки:",
+        reply_markup=get_mines_grid(show_signal=True),
+        parse_mode="Markdown"
+    )
+    # Обязательно отвечаем на колбэк, чтобы убрать «часики»
+    await call.answer()
 
-# Запуск бота
-if __name__ == '__main__':
-    dp.run_polling(bot)
+async def main():
+    print("Бот запущен! Напиши /start в Telegram.")
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("Бот выключен")
