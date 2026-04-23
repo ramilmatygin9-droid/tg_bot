@@ -75,15 +75,26 @@ async def handle_messages(message: types.Message):
             await message.answer("❌ Введите корректное число больше 0.")
         return
 
-    # Поддержка
+    # ИСПРАВЛЕННАЯ ПОМОЩЬ (ФОРМАТ СМС)
     if message.bot.id == bot.id and user_support_state.get(uid):
         username = f"@{message.from_user.username}" if message.from_user.username else "Нет"
         premium = "💎 Да" if message.from_user.is_premium else "Нет"
         kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="💬 Ответить", callback_data=f"adm_reply_{uid}")]])
-        report = (f"🆘 **Новый тикет!**\n{LINE}\n👤 Имя: {message.from_user.first_name}\n🔗 Юзер: {username}\n"
-                  f"🆔 ID: `{uid}`\n💎 Premium: {premium}\n{LINE}\n📝 Текст: {message.text}")
-        await admin_bot.send_message(MY_ID, report, reply_markup=kb, parse_mode="Markdown")
-        await message.answer("✅ Сообщение отправлено администрации!")
+        
+        # Формируем красивое сообщение для админа
+        sms_to_admin = (
+            f"🆘 **НОВОЕ СООБЩЕНИЕ В ПОДДЕРЖКУ**\n"
+            f"{LINE}\n"
+            f"👤 **Имя:** {message.from_user.first_name}\n"
+            f"🔗 **Юзер:** {username}\n"
+            f"🆔 **ID:** `{uid}`\n"
+            f"⭐️ **Premium:** {premium}\n"
+            f"{LINE}\n"
+            f"✉️ **ТЕКСТ:**\n{message.text}"
+        )
+        
+        await admin_bot.send_message(MY_ID, sms_to_admin, reply_markup=kb, parse_mode="Markdown")
+        await message.answer("✅ Ваше сообщение доставлено! Ожидайте ответа.")
         user_support_state[uid] = False
 
     # Ответ админа
@@ -95,7 +106,7 @@ async def handle_messages(message: types.Message):
                 await message.answer(f"✅ Ответ отправлен пользователю `{target_id}`")
                 del admin_reply_state[MY_ID]
             except Exception as e:
-                await message.answer(f"❌ Ошибка: {e}")
+                await message.answer(f"❌ Ошибка отправки: {e}")
 
 # --- CALLBACKS ---
 @dp.callback_query(F.data == "under_dev")
