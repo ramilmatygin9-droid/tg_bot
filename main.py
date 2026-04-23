@@ -3,23 +3,23 @@ from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-# --- ТОКЕНЫ ---
+# --- ТОКЕНЫ (НЕ МЕНЯЙ, ЕСЛИ ОНИ ВЕРНЫЕ) ---
 GAME_TOKEN = "8359920618:AAFpuDjkXwbArbuC3VtaevWMIYXuBamvSt0"
 ADMIN_TOKEN = "8610751877:AAG4eHS_knuJ-tFuVVfSIXkOC2AJxIdC990"
-MY_ID = 12345678  # СЮДА ВСТАВЬ СВОЙ ID (узнай его в @userinfobot)
+MY_ID = 8462392581  # Твой ID вставлен сюда
 
 bot = Bot(token=GAME_TOKEN)
 admin_bot = Bot(token=ADMIN_TOKEN)
 dp = Dispatcher()
 
-# --- ДИЗАЙН ---
+# --- ЭЛЕМЕНТЫ ДИЗАЙНА ---
 DOTS = ". . . . . . . . . . . . . . . . . . ."
 LINE = "────────────────"
 
-# Состояния для помощи
+# Состояние поддержки
 user_support_state = {}
 
-# --- КЛАВИАТУРЫ ---
+# --- ГЛАВНОЕ МЕНЮ ---
 def main_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [
@@ -40,7 +40,7 @@ def main_kb():
         ]
     ])
 
-# --- ОБРАБОТКА МЕНЮ ---
+# --- МЕНЮ ПОДГОТОВКИ ---
 @dp.callback_query(F.data.startswith("prep_"))
 async def prepare_game(call: types.CallbackQuery):
     game = call.data.split("_")[1]
@@ -92,12 +92,16 @@ async def play_game(call: types.CallbackQuery):
     val = msg.dice.value
     win, coef = False, 0.0
 
+    # Проверки результатов
     if game_type == "basketball":
-        win, coef = ((choice == "goal" and val >= 4) or (choice == "miss" and val < 4)), (1.6 if choice == "goal" else 2.4)
+        is_goal = val >= 4
+        win, coef = (choice == "goal" and is_goal) or (choice == "miss" and not is_goal), (1.6 if choice == "goal" else 2.4)
     elif game_type == "football":
-        win, coef = ((choice == "goal" and val >= 3) or (choice == "miss" and val < 3)), (1.6 if choice == "goal" else 2.4)
+        is_goal = val >= 3
+        win, coef = (choice == "goal" and is_goal) or (choice == "miss" and not is_goal), (1.6 if choice == "goal" else 2.4)
     elif game_type == "bowling":
-        win, coef = ((choice == "strike" and val == 6) or (choice == "any" and val > 1 and val != 6)), (4.8 if choice == "strike" else 1.4)
+        is_strike = (val == 6)
+        win, coef = (choice == "strike" and is_strike) or (choice == "any" and val > 1 and not is_strike), (4.8 if choice == "strike" else 1.4)
     elif game_type == "dice":
         if "even" in choice: win, coef = (val % 2 == 0), 1.9
         elif "odd" in choice: win, coef = (val % 2 != 0), 1.9
@@ -111,8 +115,14 @@ async def play_game(call: types.CallbackQuery):
     elif game_type == "slots":
         win, coef = (val in [1, 22, 43, 64]), 10.0
 
-    res_text = f"**{call.from_user.first_name}**\n{'🥳 **Победа!**' if win else '❌ **Проигрыш**'}\n{LINE}\n💰 Выигрыш: {int(10 * coef) if win else 0} m¢ {'✅' if win else '❌'}\n🎲 Результат: {val}"
-    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔄 играть снова", callback_data=f"prep_{game_type}"), InlineKeyboardButton(text="◀️ в меню", callback_data="to_main")]])
+    status = "🥳 **Победа!**" if win else "❌ **Проигрыш**"
+    res_text = f"**{call.from_user.first_name}**\n{status}\n{LINE}\n💰 Выигрыш: {int(10 * coef) if win else 0} m¢ {'✅' if win else '❌'}\n🎲 Результат: {val}"
+    
+    # Кнопки в один ряд!
+    kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="🔄 играть снова", callback_data=f"prep_{game_type}"),
+        InlineKeyboardButton(text="◀️ в меню", callback_data="to_main")
+    ]])
     await msg.reply(res_text, reply_markup=kb, parse_mode="Markdown")
 
 # --- СИСТЕМА ПОМОЩИ ---
@@ -124,13 +134,14 @@ async def help_query(call: types.CallbackQuery):
 
 @dp.message(F.text)
 async def handle_text(message: types.Message):
+    # Если это сообщение в техподдержку
     if user_support_state.get(message.from_user.id):
         kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="💬 Ответить", callback_data=f"reply_{message.from_user.id}")]])
         await admin_bot.send_message(MY_ID, f"🆘 **Вопрос от {message.from_user.first_name}** (`{message.from_user.id}`):\n\n{message.text}", reply_markup=kb)
         await message.answer("✅ **Сообщение отправлено администрации!**")
         del user_support_state[message.from_user.id]
 
-# --- СТАРТ И НАВИГАЦИЯ ---
+# --- НАВИГАЦИЯ ---
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     await message.answer(f"**{message.from_user.first_name}**\nВыбирай игру:", reply_markup=main_kb(), parse_mode="Markdown")
@@ -140,6 +151,7 @@ async def to_main(call: types.CallbackQuery):
     await call.message.edit_text(f"**{call.from_user.first_name}**\nВыбирай игру:", reply_markup=main_kb(), parse_mode="Markdown")
 
 async def main():
+    print("Бот запущен!")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
