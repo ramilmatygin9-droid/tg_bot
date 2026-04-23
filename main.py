@@ -57,7 +57,7 @@ async def cmd_start(message: types.Message):
     )
     await message.answer(text, reply_markup=main_kb(), parse_mode="Markdown")
 
-# --- БЫСТРЫЕ ИГРЫ ---
+# --- БЫСТРЫЕ ИГРЫ (МЕНЮ) ---
 @dp.callback_query(F.data == "fast")
 async def fast_menu(call: types.CallbackQuery):
     kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -65,6 +65,11 @@ async def fast_menu(call: types.CallbackQuery):
         [InlineKeyboardButton(text="◀️ назад", callback_data="to_main")]
     ])
     await call.message.edit_text("🚀 **Выберите быструю игру:**", reply_markup=kb, parse_mode="Markdown")
+
+# --- ИСПРАВЛЕННАЯ ЛОГИКА ИГРЫ КРАШ ---
+
+# Хранилище активных полетов {user_id: True/False}
+active_flights = {}
 
 @dp.callback_query(F.data == "prep_crash")
 async def prep_crash(call: types.CallbackQuery):
@@ -82,35 +87,94 @@ async def prep_crash(call: types.CallbackQuery):
 
 @dp.callback_query(F.data == "start_crash")
 async def start_crash(call: types.CallbackQuery):
+    uid = call.from_user.id
+    
+    # Проверка баланса
+    if user_data["balance"] < user_data["bet"]:
+        await call.answer("❌ Недостаточно средств!", show_alert=True)
+        return
+
+    # Списываем ставку
+    user_data["balance"] -= user_data["bet"]
+    
+    # Генерируем точку взрыва (от x1.1 до x4.0)
     crash_point = round(random.uniform(1.1, 4.0), 2)
     current_coef = 1.0
     msg = call.message
     
-    for _ in range(30):
+    # Помечаем, что полет активен
+    active_flights[uid] = True
+    
+    # Цикл полета
+    for _ in range(40): # Максимум 40 шагов (до x5.0)
+        # Если пользователь нажал "ЗАБРАТЬ", прерываем цикл
+        if not active_flights.get(uid):
+            return
+
+        # Проверка на взрыв
         if current_coef >= crash_point:
-            await msg.edit_text(f"💥 **РАКЕТА ВЗОРВАЛАСЬ!**\nКоэффициент: **x{crash_point}**\n\n❌ Вы проиграли {user_data['bet']} руб.", 
-                                reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔄 Еще раз", callback_data="prep_crash")]]))
+            active_flights[uid] = False # Полет окончен
+            await msg.edit_text(
+                f"💥 **РАКЕТА ВЗОРВАЛАСЬ!**\nКоэффициент: **x{crash_point}**\n\n❌ Вы проиграли {user_data['bet']} руб.", 
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔄 Еще раз", callback_data="prep_crash")]]),
+                parse_mode="Markdown"
+            )
             return
         
         current_coef = round(current_coef + 0.1, 1)
-        kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=f"💰 ЗАБРАТЬ x{current_coef}", callback_data=f"cashout_{current_coef}")]])
+        
+        # Кнопка ЗАБРАТЬ динамически обновляется
+        kb = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text=f"💰 ЗАБРАТЬ x{current_coef}", callback_data=f"cashout_{current_coef}")
+        ]])
+        
         try:
-            await msg.edit_text(f"🚀 **Ракета летит...**\n\nМножитель: **x{current_coef}**", reply_markup=kb)
-        except: pass
-        await asyncio.sleep(0.7)
+            await msg.edit_text(
+                f"🚀 **Ракета летит...**\n\nМножитель: **x{current_coef}**", 
+                reply_markup=kb,
+                parse_mode="Markdown"
+            )
+        except: 
+            # Если сообщение не изменилось (Telegram error), просто пропускаем шаг
+            pass
+            
+        await asyncio.sleep(0.6) # Скорость полета
 
 @dp.callback_query(F.data.startswith("cashout_"))
 async def crash_cashout(call: types.CallbackQuery):
-    coef = call.data.split("_")[1]
-    win = int(user_data['bet'] * float(coef))
-    await call.message.edit_text(f"🥳 **ВЫ УСПЕЛИ!**\n\n💰 Ваш выигрыш: **{win} руб.**\nМножитель: **x{coef}**", 
-                                reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="◀️ В меню", callback_data="to_main")]]))
+    uid = call.from_user.id
+    
+    # Если ракета уже взорвалась, забрать нельзя
+    if not active_flights.get(uid):
+        await call.answer("❌ Слишком поздно! Ракета взорвалась.", show_alert=True)
+        return
 
-# --- МЕНЮ ИГР ---
+    # Останавливаем полет
+    active_flights[uid] = False
+    
+    # Считаем выигрыш
+    coef_str = call.data.split("_")[1]
+    coef = float(coef_str)
+    win_amount = int(user_data['bet'] * coef)
+    
+    # Начисляем баланс
+    user_data["balance"] += win_amount
+    
+    await call.message.edit_text(
+        f"🥳 **ВЫ УСПЕЛИ!**\n\n"
+        f"💰 Ваш выигрыш: **{win_amount} руб.**\n"
+        f"Множитель: **x{coef_str}**\n\n"
+        f"💳 Новый баланс: {user_data['balance']} руб.", 
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="◀️ В меню", callback_data="to_main")]]),
+        parse_mode="Markdown"
+    )
+
+# --- МЕНЮ ИГР (БЕЗ ИЗМЕНЕНИЙ) ---
 @dp.callback_query(F.data.startswith("prep_"))
 async def prepare_game(call: types.CallbackQuery):
     game = call.data.split("_")[1]
-    if game == "crash": return # Обработано выше
+    if game == "crash": return # Обработано выше в разделе Быстрые
+    
     header = f"**{call.from_user.first_name}**\n"
     footer = f"{DOTS}\n💸 **Ставка: {user_data['bet']} руб.**"
     kb = []
@@ -131,17 +195,13 @@ async def prepare_game(call: types.CallbackQuery):
               [InlineKeyboardButton(text="4 кегли", callback_data="bet_bowling_4"), InlineKeyboardButton(text="5 кегель", callback_data="bet_bowling_5")],
               [InlineKeyboardButton(text="🎳 Страйк", callback_data="bet_bowling_strike"), InlineKeyboardButton(text="😟 Мимо", callback_data="bet_bowling_miss")]]
     elif game == "football":
-        text = f"⚽ **Футбол · выбери исход!**\n{footer}"
         kb = [[InlineKeyboardButton(text="⚽ Гол - x1.6", callback_data="bet_football_goal")], [InlineKeyboardButton(text="🥅 Мимо - x2.4", callback_data="bet_football_miss")]]
     elif game == "basketball":
-        text = f"🏀 **Баскет · выбери исход!**\n{footer}"
         kb = [[InlineKeyboardButton(text="🏀 Попадание - x1.6", callback_data="bet_basketball_goal")], [InlineKeyboardButton(text="🗑 Мимо - x2.4", callback_data="bet_basketball_miss")]]
     elif game == "darts":
-        text = f"🎯 **Дартс · выбери исход!**\n{footer}"
         kb = [[InlineKeyboardButton(text="🔴 Красное", callback_data="bet_darts_red"), InlineKeyboardButton(text="⚪ Белое", callback_data="bet_darts_white")],
               [InlineKeyboardButton(text="🎯 Центр", callback_data="bet_darts_center"), InlineKeyboardButton(text="😟 Мимо", callback_data="bet_darts_miss")]]
     elif game == "slots":
-        text = f"🎰 **Слоты · удачи!**\n{footer}"
         kb = [[InlineKeyboardButton(text="🎰 Крутить", callback_data="bet_slots_any")]]
 
     kb.append([InlineKeyboardButton(text="◀️ назад", callback_data="to_main")])
