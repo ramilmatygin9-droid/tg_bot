@@ -30,7 +30,7 @@ def main_kb():
             InlineKeyboardButton(text="🏀", callback_data="prep_basketball"),
             InlineKeyboardButton(text="⚽", callback_data="prep_football"),
             InlineKeyboardButton(text="🎯", callback_data="prep_darts"),
-            InlineKeyboardButton(text="🎳", callback_data="prep_bowling"),
+            InlineKeyboardButton(text=" bowling", callback_data="prep_bowling"),
             InlineKeyboardButton(text="🎲", callback_data="prep_dice"),
             InlineKeyboardButton(text="🎰", callback_data="prep_slots")
         ],
@@ -50,11 +50,13 @@ def main_kb():
 # --- ОБРАБОТКА КОМАНД ---
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
+    # Добавлен ответ для админ-бота (токен помощи)
     if message.bot.token == ADMIN_TOKEN:
         if message.from_user.id == MY_ID:
-            await message.answer("✅ Админ-бот активирован.")
+            await message.answer("✅ Бот поддержки активен. Теперь вы будете получать уведомления.")
         return
 
+    # Ответ для игрового бота
     if message.bot.token == GAME_TOKEN:
         text = (
             f"🎮 **ДАВАЙ НАЧНЕМ ИГРАТЬ!**\n\n"
@@ -186,7 +188,6 @@ async def play_game(call: types.CallbackQuery):
 
 @dp.callback_query(F.data == "to_main")
 async def back_to_main(call: types.CallbackQuery):
-    # ФИКС: теперь меню обновляется в том же сообщении
     text = f"🎮 **ГЛАВНОЕ МЕНЮ**\n💰 Баланс: {user_data['balance']} руб."
     await call.message.edit_text(text, reply_markup=main_kb())
 
