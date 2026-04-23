@@ -7,7 +7,7 @@ from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # --- НАСТРОЙКИ ---
-# Твой НОВЫЙ токен, который ты скинул
+# Твой новый чистый токен
 GAME_TOKEN = "8359920618:AAHKLw57b3LJ7MupDtL3hWP_Msl1SwTABSQ" 
 ADMIN_TOKEN = "8610751877:AAG4eHS_knuJ-tFuVVfSIXkOC2AJxIdC990"
 MY_ID = 846239258 
@@ -39,18 +39,22 @@ def main_kb():
         ]
     ])
 
+# --- ОСНОВНАЯ КОМАНДА /play ---
 @dp.message(Command("play"))
 async def cmd_play(message: types.Message):
     now = datetime.now().strftime("%H:%M:%S")
-    text = (
-        f"🎮 **ИГРА ЗАПУЩЕНА**\n\n"
-        f"💰 Баланс: **{user_data['balance']} руб.**\n"
-        f"💸 Ставка: **{user_data['bet']} руб.**\n"
-        f"🕒 Время: `{now}`\n\n"
-        f"Выбери игру ниже 👇"
-    )
-    await message.answer(text, reply_markup=main_kb(), parse_mode="Markdown")
+    # Бот отвечает только если сообщение пришло в игровой бот
+    if message.bot.token == GAME_TOKEN:
+        text = (
+            f"🎮 **ИГРА ЗАПУЩЕНА**\n\n"
+            f"💰 Баланс: **{user_data['balance']} руб.**\n"
+            f"💸 Ставка: **{user_data['bet']} руб.**\n"
+            f"🕒 Время: `{now}`\n\n"
+            f"Выбери игру ниже 👇"
+        )
+        await message.answer(text, reply_markup=main_kb(), parse_mode="Markdown")
 
+# --- ЛОГИКА СООБЩЕНИЙ ---
 @dp.message()
 async def handle_messages(message: types.Message):
     uid = message.from_user.id
@@ -80,6 +84,7 @@ async def handle_messages(message: types.Message):
             except:
                 await message.answer("❌ Не удалось отправить ответ.")
 
+# --- CALLBACKS ---
 @dp.callback_query(F.data == "ask_help")
 async def help_init(call: types.CallbackQuery):
     user_support_state[call.from_user.id] = True
@@ -103,11 +108,11 @@ async def profile_call(call: types.CallbackQuery):
     await call.answer(f"👤 {call.from_user.first_name}\n💰 Баланс: {user_data['balance']} руб.", show_alert=True)
 
 async def main():
-    # drop_pending_updates=True очистит очередь из старых сообщений о подписке
+    # Очистка старых обновлений, чтобы убрать ошибки подписки
     await bot.delete_webhook(drop_pending_updates=True)
     await admin_bot.delete_webhook(drop_pending_updates=True)
     
-    print("Бот запущен!")
+    print("Бот запущен и ждет команду /play")
     await dp.start_polling(bot, admin_bot)
 
 if __name__ == "__main__":
