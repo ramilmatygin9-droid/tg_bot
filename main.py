@@ -115,7 +115,7 @@ async def crash_cashout(call: types.CallbackQuery):
     await call.message.edit_text(f"🥳 **ВЫ УСПЕЛИ!**\n\n💰 Выигрыш: **{win} руб.**\nМножитель: **x{coef}**\n💳 Баланс: {user_data['balance']} руб.", 
                                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="◀️ В меню", callback_data="to_main")]]))
 
-# --- ПОДГОТОВКА СТАРЫХ ИГР ---
+# --- ПОДГОТОВКА ИГР ---
 @dp.callback_query(F.data.startswith("prep_"))
 async def prepare_game(call: types.CallbackQuery):
     game = call.data.split("_")[1]
@@ -123,6 +123,7 @@ async def prepare_game(call: types.CallbackQuery):
     header = f"**{call.from_user.first_name}**\n"
     footer = f"{DOTS}\n💸 **Ставка: {user_data['bet']} руб.**"
     kb = []
+    text = ""
     
     if game == "dice":
         text = f"🍀 **Кубик · выбери режим!**\n{footer}"
@@ -153,9 +154,13 @@ async def prepare_game(call: types.CallbackQuery):
     kb.append([InlineKeyboardButton(text="◀️ назад", callback_data="to_main")])
     await call.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode="Markdown")
 
-# --- ЛОГИКА СТАВКИ (СТАРАЯ СИСТЕМА) ---
+# --- ЛОГИКА ИГРЫ (ИСПРАВЛЕНО: СПИСАНИЕ ПРИ ПРОИГРЫШЕ) ---
 @dp.callback_query(F.data.startswith("bet_"))
 async def play_game(call: types.CallbackQuery):
+    if user_data["balance"] < user_data["bet"]:
+        await call.answer("❌ Недостаточно средств!", show_alert=True)
+        return
+
     data = call.data.split("_")
     game_type, choice = data[1], data[2]
     await call.message.delete()
@@ -192,19 +197,19 @@ async def play_game(call: types.CallbackQuery):
     elif game_type == "slots":
         win, coef = (val in [1, 22, 43, 64]), 10.0
 
-    if win: user_data["balance"] += int(user_data["bet"] * coef)
-    else: user_data["balance"] -= user_data["bet"]
+    if win:
+        user_data["balance"] += int(user_data["bet"] * coef) - user_data["bet"]
+    else:
+        user_data["balance"] -= user_data["bet"]
 
-    res_text = f"**{call.from_user.first_name}**\n{'🥳 **Победа!**' if win else '❌ **Проигрыш**'}\n{LINE}\n💰 Выигрыш: {int(user_data['bet'] * coef) if win else 0} руб.\n🎲 Результат: {val}"
-    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔄 Играть снова", callback_data=f"prep_{game_type}"), InlineKeyboardButton(text="◀️ В меню", callback_data="to_main")]])
+    res_text = f"**{call.from_user.first_name}**\n{'🥳 **Победа!**' if win else '❌ **Проигрыш**'}\n{LINE}\n💰 Баланс: {user_data['balance']} руб.\n🎲 Результат: {val}"
+    kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔄 Снова", callback_data=f"prep_{game_type}"), InlineKeyboardButton(text="◀️ В меню", callback_data="to_main")]])
     await msg.reply(res_text, reply_markup=kb, parse_mode="Markdown")
 
-# --- ПРОФИЛЬ И ПОДДЕРЖКА ---
+# --- СИСТЕМНЫЕ ФУНКЦИИ ---
 @dp.callback_query(F.data == "profile")
 async def show_profile(call: types.CallbackQuery):
-    text = (f"👤 **{call.from_user.first_name}** | ID: `{call.from_user.id}`\n"
-            f"🎖 Ваш уровень: **{user_data['level']}**\n"
-            f"💰 Баланс: **{user_data['balance']} руб.**\n{LINE}\nУдачи в играх!")
+    text = (f"👤 **{call.from_user.first_name}** | ID: `{call.from_user.id}`\n🎖 Уровень: **{user_data['level']}**\n💰 Баланс: **{user_data['balance']} руб.**\n{LINE}\nУдачи!")
     await call.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="◀️ назад", callback_data="to_main")]]), parse_mode="Markdown")
 
 @dp.callback_query(F.data == "to_main")
@@ -217,14 +222,6 @@ async def ask_help(call: types.CallbackQuery):
     user_support_state[call.from_user.id] = True
     await call.message.answer("📝 Опишите вашу проблему:")
     await call.answer()
-
-@dp.message()
-async def handle_msg(message: types.Message):
-    if user_support_state.get(message.from_user.id):
-        kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="💬 Ответить", callback_data=f"adm_reply_{message.from_user.id}")]])
-        await admin_bot.send_message(MY_ID, f"🆘 Тикет от {message.from_user.first_name}:\n{message.text}", reply_markup=kb)
-        await message.answer("✅ Отправлено админу.")
-        del user_support_state[message.from_user.id]
 
 async def main():
     await dp.start_polling(bot, admin_bot)
