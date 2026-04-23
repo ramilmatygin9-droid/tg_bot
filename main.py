@@ -1,14 +1,15 @@
 import asyncio
 import random
 import logging
+from datetime import datetime # Добавили для работы с часами
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # --- НАСТРОЙКИ ---
 GAME_TOKEN = "8359920618:AAFpuDjkXwbArbuC3VtaevWMIYXuBamvSt0"
-ADMIN_TOKEN = "8610751877:AAG4eHS_knuJ-tFuVVfSIXkOC2AJxIdC990"
-MY_ID = 846239258  # Твой актуальный ID
+ADMIN_TOKEN = "8034796055:AAFrpMOUowWvo6W3kGBsoMiq9RVjsaM2Qig"
+MY_ID = 846239258  # Твой ID
 
 bot = Bot(token=GAME_TOKEN)
 admin_bot = Bot(token=ADMIN_TOKEN)
@@ -50,11 +51,20 @@ def main_kb():
 # --- ОБРАБОТКА КОМАНД ---
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
+    # Получаем текущее время
+    now = datetime.now().strftime("%H:%M:%S | %d.%m.%Y")
+
+    if message.bot.token == ADMIN_TOKEN:
+        if message.from_user.id == MY_ID:
+            await message.answer(f"✅ Бот поддержки запущен.\n🕒 Время: `{now}`", parse_mode="Markdown")
+        return
+
     if message.bot.token == GAME_TOKEN:
         text = (
             f"🎮 **ДАВАЙ НАЧНЕМ ИГРАТЬ!**\n\n"
             f"💰 Баланс: **{user_data['balance']} руб.**\n"
-            f"💸 Ставка: **{user_data['bet']} руб.**\n\n"
+            f"💸 Ставка: **{user_data['bet']} руб.**\n"
+            f"🕒 Время: `{now}`\n\n"
             f"👇 *Выбери игру и начинай!*"
         )
         await message.answer(text, reply_markup=main_kb(), parse_mode="Markdown")
@@ -63,7 +73,6 @@ async def cmd_start(message: types.Message):
 @dp.message()
 async def handle_messages(message: types.Message):
     uid = message.from_user.id
-    
     if message.bot.token == GAME_TOKEN:
         if change_bet_state.get(uid):
             if message.text.isdigit():
@@ -71,20 +80,16 @@ async def handle_messages(message: types.Message):
                 change_bet_state[uid] = False
                 await message.answer(f"✅ Ставка изменена на **{user_data['bet']} руб.**", reply_markup=main_kb())
             return
-
         if user_support_state.get(uid):
             kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="💬 Ответить", callback_data=f"adm_reply_{uid}")]])
             sms = (f"🆘 **НОВОЕ ОБРАЩЕНИЕ**\n{LINE}\n👤 Имя: {message.from_user.first_name}\n"
                    f"🆔 ID: `{uid}`\n{LINE}\n✉️ Текст: {message.text}")
-            
             try:
                 await admin_bot.send_message(MY_ID, sms, reply_markup=kb, parse_mode="Markdown")
-                await message.answer("✅ Сообщение отправлено!") # Подтверждение отправки
+                await message.answer("✅ Сообщение отправлено!")
             except:
                 await message.answer("❌ Ошибка при отправке. Попробуйте позже.")
-            
             user_support_state[uid] = False
-
     elif message.bot.token == ADMIN_TOKEN and uid == MY_ID:
         if admin_reply_state.get(MY_ID):
             target = admin_reply_state[MY_ID]
@@ -119,14 +124,12 @@ async def adm_reply_callback(call: types.CallbackQuery):
         await call.message.answer("⌨️ Пишите текст ответа:")
         await call.answer()
 
-# --- ПОДГОТОВКА ИГР ---
 @dp.callback_query(F.data.startswith("prep_"))
 async def prepare_game(call: types.CallbackQuery):
     game = call.data.split("_")[1]
     header = f"👤 **{call.from_user.first_name}**\n"
     footer = f"{DOTS}\n💸 **Ставка: {user_data['bet']} руб.**"
     kb = []
-    
     if game == "dice":
         text = f"{header}🍀 **Кубик · выбери режим!**\n{footer}"
         kb = [[InlineKeyboardButton(text="1", callback_data="bet_dice_v1"), InlineKeyboardButton(text="2", callback_data="bet_dice_v2"), InlineKeyboardButton(text="3", callback_data="bet_dice_v3")],
@@ -149,11 +152,9 @@ async def prepare_game(call: types.CallbackQuery):
     elif game == "slots":
         text = f"{header}🎰 **Слоты**\n{footer}"
         kb = [[InlineKeyboardButton(text="🎰 Крутить", callback_data="bet_slots_any")]]
-
     kb.append([InlineKeyboardButton(text="◀️ назад", callback_data="to_main")])
     await call.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode="Markdown")
 
-# --- ЛОГИКА ИГРЫ ---
 @dp.callback_query(F.data.startswith("bet_"))
 async def play_game(call: types.CallbackQuery):
     if user_data["balance"] < user_data["bet"]:
@@ -166,7 +167,6 @@ async def play_game(call: types.CallbackQuery):
     await asyncio.sleep(4)
     val = msg.dice.value
     win, coef = False, 0.0
-
     if game_type == "dice":
         if choice == "even": win, coef = (val % 2 == 0), 1.94
         elif choice == "odd": win, coef = (val % 2 != 0), 1.94
@@ -183,17 +183,16 @@ async def play_game(call: types.CallbackQuery):
         elif choice == "white": win, coef = (val in [2, 3]), 2.9
     elif game_type == "slots":
         win, coef = (val in [1, 22, 43, 64]), 10.0
-
     if win: user_data["balance"] += int(user_data["bet"] * coef) - user_data["bet"]
     else: user_data["balance"] -= user_data["bet"]
-
     res_text = f"**{call.from_user.first_name}**\n{'🥳 **Победа!**' if win else '❌ **Проигрыш**'}\n{LINE}\n💰 Баланс: {user_data['balance']} руб.\n🎲 Результат: {val}"
     kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🔄 Снова", callback_data=f"prep_{game_type}"), InlineKeyboardButton(text="◀️ Меню", callback_data="to_main")]])
     await msg.reply(res_text, reply_markup=kb, parse_mode="Markdown")
 
 @dp.callback_query(F.data == "to_main")
 async def back_to_main(call: types.CallbackQuery):
-    await bot.send_message(call.from_user.id, f"🎮 **ГЛАВНОЕ МЕНЮ**\n💰 Баланс: {user_data['balance']} руб.", reply_markup=main_kb())
+    text = f"🎮 **ГЛАВНОЕ МЕНЮ**\n💰 Баланс: {user_data['balance']} руб."
+    await call.message.edit_text(text, reply_markup=main_kb())
 
 async def main():
     await dp.start_polling(bot, admin_bot)
