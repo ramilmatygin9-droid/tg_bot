@@ -36,11 +36,12 @@ def main_kb():
         [InlineKeyboardButton(text="Повторить игру 🔄", callback_data="to_main")]
     ])
 
-# --- ОБРАБОТКА КОМАНД ---
+# --- ОБРАБОТКА КОМАНД (ПЕРВЫЙ ПРИОРИТЕТ) ---
 @dp.message(Command("start", "play"))
 async def cmd_start(message: types.Message):
     await message.answer(f"🎮 **ГЛАВНОЕ МЕНЮ**\n💰 Баланс: {user_data['balance']} m¢", reply_markup=main_kb())
 
+# --- КНОПКИ МЕНЮ ---
 @dp.callback_query(F.data == "to_main")
 async def back_to_main(call: types.CallbackQuery):
     await call.message.edit_text(f"🎮 **ГЛАВНОЕ МЕНЮ**\n💰 Баланс: {user_data['balance']} m¢", reply_markup=main_kb())
@@ -68,7 +69,7 @@ async def prepare_game(call: types.CallbackQuery):
                 f"┕ 🎳 Страйк (x5.8)\n"
                 f"┕ 😟 Мимо (x5.8)")
         kb = [
-            [InlineKeyboardButton(text="1 кегля", callback_data="play_bowl_1"), InlineKeyboardButton(text="3 кегли", callback_data="play_bowl_3")],
+            [InlineKeyboardButton(text="1 кегла", callback_data="play_bowl_1"), InlineKeyboardButton(text="3 кегли", callback_data="play_bowl_3")],
             [InlineKeyboardButton(text="4 кегли", callback_data="play_bowl_4"), InlineKeyboardButton(text="5 кегель", callback_data="play_bowl_5")],
             [InlineKeyboardButton(text="🎳 Страйк", callback_data="play_bowl_6"), InlineKeyboardButton(text="😟 Мимо", callback_data="play_bowl_0")],
             [btn_back]
@@ -109,13 +110,16 @@ async def play_engine(call: types.CallbackQuery):
     data = call.data.split("_")
     game_code = data[1]
     selection = data[2]
+    
     if user_data["balance"] < user_data["bet"]:
         await call.answer("❌ Недостаточно m¢!", show_alert=True)
         return
+        
     user_data["balance"] -= user_data["bet"]
     emoji_map = {"bask": "🏀", "foot": "⚽", "dart": "🎯", "bowl": "🎳", "dice": "🎲", "slots": "🎰"}
     dice_msg = await call.message.answer_dice(emoji=emoji_map[game_code])
     res = dice_msg.dice.value
+    
     win, multiplier, result_text = False, 1.0, ""
 
     if game_code == "bask":
@@ -141,6 +145,7 @@ async def play_engine(call: types.CallbackQuery):
         if selection.isdigit() and (int(selection) == res or (int(selection) == 0 and res == 1)): win, multiplier = True, 5.8
 
     await asyncio.sleep(3.5)
+    
     win_amount = int(user_data["bet"] * multiplier) if win else 0
     if win: user_data["balance"] += win_amount
     
@@ -150,6 +155,7 @@ async def play_engine(call: types.CallbackQuery):
                   f"{DOTS}\n⚡️ *Итог:* {result_text}")
     await call.message.answer(final_text, reply_markup=main_kb())
 
+# --- УПРАВЛЕНИЕ СТАВКОЙ ---
 @dp.callback_query(F.data.startswith("bet_"))
 async def change_bet(call: types.CallbackQuery):
     action = call.data.split("_")[1]
@@ -164,4 +170,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
