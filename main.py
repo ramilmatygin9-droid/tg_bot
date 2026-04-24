@@ -3,11 +3,13 @@ import random
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.client.default import DefaultBotProperties
 
 # --- НАСТРОЙКИ ---
 GAME_TOKEN = "8359920618:AAHKLw57b3LJ7MupDtL3hWP_Msl1SwTABSQ" 
 
-bot = Bot(token=GAME_TOKEN, parse_mode="Markdown")
+# Исправлено: правильная передача parse_mode
+bot = Bot(token=GAME_TOKEN, default=DefaultBotProperties(parse_mode="Markdown"))
 dp = Dispatcher()
 
 # Имитация БД
@@ -36,7 +38,7 @@ def main_kb():
         [InlineKeyboardButton(text="Повторить игру 🔄", callback_data="to_main")]
     ])
 
-# --- ОБРАБОТКА КОМАНД (ПЕРВЫЙ ПРИОРИТЕТ) ---
+# --- ОБРАБОТКА КОМАНД ---
 @dp.message(Command("start", "play"))
 async def cmd_start(message: types.Message):
     await message.answer(f"🎮 **ГЛАВНОЕ МЕНЮ**\n💰 Баланс: {user_data['balance']} m¢", reply_markup=main_kb())
@@ -117,7 +119,7 @@ async def play_engine(call: types.CallbackQuery):
         
     user_data["balance"] -= user_data["bet"]
     emoji_map = {"bask": "🏀", "foot": "⚽", "dart": "🎯", "bowl": "🎳", "dice": "🎲", "slots": "🎰"}
-    dice_msg = await call.message.answer_dice(emoji=emoji_map[game_code])
+    dice_msg = await call.message.answer_dice(emoji=emoji_map.get(game_code, "🎲"))
     res = dice_msg.dice.value
     
     win, multiplier, result_text = False, 1.0, ""
@@ -144,12 +146,12 @@ async def play_engine(call: types.CallbackQuery):
         result_text = f"{res} кегель" if 1 < res < 6 else ("страйк" if res == 6 else "мимо")
         if selection.isdigit() and (int(selection) == res or (int(selection) == 0 and res == 1)): win, multiplier = True, 5.8
 
-    await asyncio.sleep(3.5)
+    await asyncio.sleep(4.0)
     
     win_amount = int(user_data["bet"] * multiplier) if win else 0
     if win: user_data["balance"] += win_amount
     
-    final_text = (f"🥳 *{emoji_map[game_code]} {'Победа!' if win else 'Проигрыш'} {'✅' if win else '❌'}*\n"
+    final_text = (f"🥳 *{emoji_map.get(game_code, '🎲')} {'Победа!' if win else 'Проигрыш'} {'✅' if win else '❌'}*\n"
                   f"{DOTS}\n💸 *Ставка:* {user_data['bet']} m¢\n🎲 *Выбрано:* {selection}\n"
                   f"💰 *Выигрыш:* x{multiplier if win else 0} / {win_amount} m¢\n"
                   f"{DOTS}\n⚡️ *Итог:* {result_text}")
