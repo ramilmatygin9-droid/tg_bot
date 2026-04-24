@@ -36,13 +36,21 @@ def main_kb():
         [InlineKeyboardButton(text="Повторить игру 🔄", callback_data="to_main")]
     ])
 
+# --- ОБРАБОТКА КОМАНД ---
+@dp.message(Command("start", "play"))
+async def cmd_start(message: types.Message):
+    await message.answer(f"🎮 **ГЛАВНОЕ МЕНЮ**\n💰 Баланс: {user_data['balance']} m¢", reply_markup=main_kb())
+
+@dp.callback_query(F.data == "to_main")
+async def back_to_main(call: types.CallbackQuery):
+    await call.message.edit_text(f"🎮 **ГЛАВНОЕ МЕНЮ**\n💰 Баланс: {user_data['balance']} m¢", reply_markup=main_kb())
+
 @dp.callback_query(F.data.startswith("prep_"))
 async def prepare_game(call: types.CallbackQuery):
     game = call.data.split("_")[1]
     btn_back = InlineKeyboardButton(text="◀️ назад", callback_data="to_main")
     bet = user_data['bet']
     
-    # --- КУБИК ---
     if game == "dice":
         text = f"Рамиль\n🍀 *Кубик · выбери режим!*\n{DOTS}\n💸 *Ставка: {bet} m¢*"
         kb = [
@@ -53,8 +61,6 @@ async def prepare_game(call: types.CallbackQuery):
             [InlineKeyboardButton(text="➕ Больше 3 x1.94", callback_data="play_dice_high"), InlineKeyboardButton(text="➖ Меньше 3 x2.9", callback_data="play_dice_low")],
             [btn_back]
         ]
-    
-    # --- БОУЛИНГ ---
     elif game == "bowling":
         text = (f"Рамиль\n🎳 *Боулинг · выбери исход!*\n{DOTS}\n💸 *Ставка: {bet} m¢*\n\n"
                 f"🔰 *Коэффициенты:*\n"
@@ -67,8 +73,6 @@ async def prepare_game(call: types.CallbackQuery):
             [InlineKeyboardButton(text="🎳 Страйк", callback_data="play_bowl_6"), InlineKeyboardButton(text="😟 Мимо", callback_data="play_bowl_0")],
             [btn_back]
         ]
-
-    # --- ДАРТС ---
     elif game == "darts":
         text = (f"Рамиль\n🎯 *Дартс · выбери исход!*\n{DOTS}\n💸 *Ставка: {bet} m¢*\n\n"
                 f"🔰 *Коэффициенты:*\n"
@@ -81,8 +85,6 @@ async def prepare_game(call: types.CallbackQuery):
             [InlineKeyboardButton(text="🎯 Центр", callback_data="play_dart_center"), InlineKeyboardButton(text="😟 Мимо", callback_data="play_dart_miss")],
             [btn_back]
         ]
-
-    # --- ФУТБОЛ ---
     elif game == "football":
         text = f"Рамиль\n⚽ *Футбол · выбери исход!*\n{DOTS}\n💸 *Ставка: {bet} m¢*"
         kb = [
@@ -90,8 +92,6 @@ async def prepare_game(call: types.CallbackQuery):
             [InlineKeyboardButton(text="🥅 Мимо - x2.4", callback_data="play_foot_miss")],
             [btn_back]
         ]
-
-    # --- БАСКЕТБОЛ ---
     elif game == "basketball":
         text = f"Рамиль\n🏀 *Баскетбол · выбери исход!*\n{DOTS}\n💸 *Ставка: {bet} m¢*"
         kb = [
@@ -101,45 +101,33 @@ async def prepare_game(call: types.CallbackQuery):
         ]
     else:
         return
-
     await call.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
 
 # --- ЛОГИКА ИГРЫ ---
 @dp.callback_query(F.data.startswith("play_"))
 async def play_engine(call: types.CallbackQuery):
     data = call.data.split("_")
-    game_code = data[1] # bask, foot, dart, bowl, dice
-    selection = data[2] # выбранный исход
-    
+    game_code = data[1]
+    selection = data[2]
     if user_data["balance"] < user_data["bet"]:
         await call.answer("❌ Недостаточно m¢!", show_alert=True)
         return
-
     user_data["balance"] -= user_data["bet"]
-    
     emoji_map = {"bask": "🏀", "foot": "⚽", "dart": "🎯", "bowl": "🎳", "dice": "🎲", "slots": "🎰"}
     dice_msg = await call.message.answer_dice(emoji=emoji_map[game_code])
     res = dice_msg.dice.value
-    
-    # Определение результата (упрощенная логика по значениям Telegram Dice)
-    win = False
-    multiplier = 1.0
-    result_text = ""
+    win, multiplier, result_text = False, 1.0, ""
 
     if game_code == "bask":
-        # 4, 5 - попадание
         is_goal = res >= 4
         result_text = "попадание" if is_goal else "мимо"
         if (selection == "goal" and is_goal): win, multiplier = True, 2.4
         elif (selection == "miss" and not is_goal): win, multiplier = True, 1.6
-
     elif game_code == "foot":
-        # 3, 4, 5 - гол
         is_goal = res >= 3
         result_text = "гол" if is_goal else "мимо"
         if (selection == "goal" and is_goal): win, multiplier = True, 1.6
         elif (selection == "miss" and not is_goal): win, multiplier = True, 2.4
-
     elif game_code == "dice":
         result_text = f"выпало {res}"
         if selection.isdigit() and int(selection) == res: win, multiplier = True, 5.8
@@ -148,55 +136,26 @@ async def play_engine(call: types.CallbackQuery):
         elif selection == "high" and res > 3: win, multiplier = True, 1.94
         elif selection == "low" and res < 3: win, multiplier = True, 2.9
         elif selection == "equal3" and res == 3: win, multiplier = True, 5.8
-
     elif game_code == "bowl":
-        # В боулинге: 1 - мимо, 6 - страйк, 2-5 - количество кеглей
         result_text = f"{res} кегель" if 1 < res < 6 else ("страйк" if res == 6 else "мимо")
-        # Для простоты: если значение совпало с кнопкой
-        sel_val = int(selection)
-        if sel_val == res or (sel_val == 0 and res == 1): win, multiplier = True, 5.8
+        if selection.isdigit() and (int(selection) == res or (int(selection) == 0 and res == 1)): win, multiplier = True, 5.8
 
-    await asyncio.sleep(3.5) # Ждем завершения анимации
-
-    if win:
-        win_amount = int(user_data["bet"] * multiplier)
-        user_data["balance"] += win_amount
-        status_icon = "✅"
-        header = "Победа!"
-    else:
-        status_icon = "❌"
-        header = "Проигрыш"
-        win_amount = 0
-
-    final_text = (
-        f"🥳 *{emoji_map[game_code]} {header} {status_icon}*\n"
-        f"{DOTS}\n"
-        f"💸 *Ставка:* {user_data['bet']} m¢\n"
-        f"🎲 *Выбрано:* {selection}\n"
-        f"💰 *Выигрыш:* x{multiplier if win else 0} / {win_amount} m¢\n"
-        f"{DOTS}\n"
-        f"⚡️ *Итог:* {result_text}"
-    )
+    await asyncio.sleep(3.5)
+    win_amount = int(user_data["bet"] * multiplier) if win else 0
+    if win: user_data["balance"] += win_amount
     
+    final_text = (f"🥳 *{emoji_map[game_code]} {'Победа!' if win else 'Проигрыш'} {'✅' if win else '❌'}*\n"
+                  f"{DOTS}\n💸 *Ставка:* {user_data['bet']} m¢\n🎲 *Выбрано:* {selection}\n"
+                  f"💰 *Выигрыш:* x{multiplier if win else 0} / {win_amount} m¢\n"
+                  f"{DOTS}\n⚡️ *Итог:* {result_text}")
     await call.message.answer(final_text, reply_markup=main_kb())
 
-@dp.message(Command("start"))
-async def cmd_start(message: types.Message):
-    await message.answer(f"🎮 **ГЛАВНОЕ МЕНЮ**\n💰 Баланс: {user_data['balance']} m¢", reply_markup=main_kb())
-
-@dp.callback_query(F.data == "to_main")
-async def back_to_main(call: types.CallbackQuery):
-    await call.message.edit_text(f"🎮 **ГЛАВНОЕ МЕНЮ**\n💰 Баланс: {user_data['balance']} m¢", reply_markup=main_kb())
-
-# Управление ставкой
 @dp.callback_query(F.data.startswith("bet_"))
 async def change_bet(call: types.CallbackQuery):
     action = call.data.split("_")[1]
     if action == "up": user_data["bet"] += 10
     elif action == "down" and user_data["bet"] > 5: user_data["bet"] -= 5
     elif action == "reset": user_data["bet"] = 10
-    
-    await call.answer(f"Ставка: {user_data['bet']} m¢")
     await call.message.edit_text(f"🎮 **ГЛАВНОЕ МЕНЮ**\n💰 Баланс: {user_data['balance']} m¢\n🔥 Текущая ставка: {user_data['bet']}", reply_markup=main_kb())
 
 async def main():
@@ -205,3 +164,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
