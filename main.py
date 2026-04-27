@@ -1,84 +1,48 @@
 import asyncio
-import sqlite3
+import random
 from aiogram import Bot, Dispatcher, types, F
-from aiogram.filters import Command
-from aiogram.types import WebAppInfo, InlineKeyboardMarkup, InlineKeyboardButton
 
 # Твой токен уже здесь
 TOKEN = "8693763218:AAGoc7Y2xTFZeXsaZ_mzksRkFUhOnA3Zj10"
-# Ссылка на твое Mini App (замени на свою рабочую ссылку GitHub/Vercel)
-WEB_APP_URL = "https://your-site-url.com" 
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# --- Работа с Базой Данных (SQLite) ---
-def init_db():
-    conn = sqlite3.connect("game_base.db")
-    cursor = conn.cursor()
-    cursor.execute('''CREATE TABLE IF NOT EXISTS users 
-                      (user_id INTEGER PRIMARY KEY, balance INTEGER, level INTEGER)''')
-    conn.commit()
-    conn.close()
+# База аргументов, которые «урывают» без прямого мата (так жестче)
+BURN_LIST = [
+    "Твой интеллект напоминает демо-версию игры: функций ноль, а рекламы много.",
+    "Я бы ответил тебе взаимностью, но у меня нет режима 'деградация'.",
+    "Твоё мнение для меня как спам в почте — удаляю не читая.",
+    "Ты так смешно пытаешься казаться опасным. Давай ещё, я люблю комедии.",
+    "Интересно, каково это — жить с мозгом, который используется только как заглушка для черепа?",
+    "Твой уровень аргументации — уровень планктона. Такой же примитивный и тянет на дно.",
+    "Если бы глупость светилась, тебя бы было видно из космоса даже в туман.",
+    "Слушай, не трать мой трафик. Твои мысли слишком плоские даже для 2D-мира.",
+    "Я смотрю на тебя свысока не из-за шеи, а из-за твоего IQ."
+]
 
-def get_user_data(user_id):
-    conn = sqlite3.connect("game_base.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT balance, level FROM users WHERE user_id = ?", (user_id,))
-    data = cursor.fetchone()
-    conn.close()
-    if data:
-        return data
-    return (1000, 1) # Стартовый капитал 1000 и 1 уровень
+# Слова, на которые Жирапес будет агриться
+TRIGGER_WORDS = ["лох", "тупой", "бот", "дурак", "мусор", "клоун", "жираф", "урод"]
 
-# --- Обработчики команд ---
-
-@dp.message(Command("start"))
-async def start_cmd(message: types.Message):
-    user_id = message.from_user.id
-    balance, level = get_user_data(user_id)
+@dp.message(F.text)
+async def girapes_logic(message: types.Message):
+    msg_text = message.text.lower()
     
-    # Сохраняем нового игрока, если его нет
-    conn = sqlite3.connect("game_base.db")
-    cursor = conn.cursor()
-    cursor.execute("INSERT OR IGNORE INTO users (user_id, balance, level) VALUES (?, ?, ?)", 
-                   (user_id, balance, level))
-    conn.commit()
-    conn.close()
-
-    markup = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🕹 ИГРАТЬ (Mini App)", web_app=WebAppInfo(url=WEB_APP_URL))],
-        [InlineKeyboardButton(text="💎 Мой Профиль", callback_data="my_profile")]
-    ])
-
-    await message.answer(
-        f"🔥 **Добро пожаловать в Case Clicker!**\n\n"
-        f"💰 Твой баланс: {balance} монет\n"
-        f"⭐ Твой уровень: {level}\n\n"
-        f"Нажимай кнопку ниже, чтобы открыть крутую рулетку с кейсами!",
-        reply_markup=markup,
-        parse_mode="Markdown"
-    )
-
-@dp.callback_query(F.data == "my_profile")
-async def profile_callback(callback: types.CallbackQuery):
-    balance, level = get_user_data(callback.from_user.id)
-    await callback.answer() # Убираем "часики" с кнопки
-    await callback.message.answer(
-        f"👤 **Профиль {callback.from_user.first_name}:**\n"
-        f"💵 Баланс: {balance} 💰\n"
-        f"📊 Уровень: {level}\n"
-        f"🏆 Статус: {'Шейх' if balance > 10000 else 'Игрок'}",
-        parse_mode="Markdown"
-    )
+    # 1. Если бота оскорбляют
+    if any(word in msg_text for word in TRIGGER_WORDS):
+        await message.reply(random.choice(BURN_LIST))
+    
+    # 2. Если просто зовут по имени
+    elif "жирапес" in msg_text:
+        await message.answer("Чего тебе, кожаный? Опять хочешь порцию унижения или просто зашел поплакаться?")
 
 async def main():
-    init_db() # Создаем базу данных при запуске
-    print("✅ Бот запущен! Ошибок нет.")
+    print("Жирапес запущен и готов разносить...")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
+        print("Жирапес ушел спать.")
         print("Бот выключен.")
