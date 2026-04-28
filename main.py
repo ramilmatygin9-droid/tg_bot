@@ -1,83 +1,90 @@
 import asyncio
 from aiogram import Bot, Dispatcher, types, F
-from aiogram.filters import Command
+from aiogram.filters import Command, StateFilter
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import StatesGroup, State
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.filters.chat_member_updated import ChatMemberUpdatedFilter, JOIN_TRANSITION, LEAVE_TRANSITION
+from aiogram.filters.chat_member_updated import ChatMemberUpdatedFilter, JOIN_TRANSITION
 
+# --- НАСТРОЙКИ ---
 TOKEN = "8034796055:AAFBzzyK3IFs9BsKx02Al-fPCXSIFJ3uV90"
+ADMIN_ID = 8462392581 # Вставь свой ID
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# Временное хранилище (в идеале использовать базу данных)
-# Формат: {chat_id: chat_title}
+# Хранилище каналов (в памяти)
 active_channels = {}
 
-# 1. Отслеживаем добавление бота в новые каналы
+# Состояния для выбора канала
+class PostState(StatesGroup):
+    choosing_destination = State()
+
+# 1. Ловим добавление в канал
 @dp.my_chat_member(ChatMemberUpdatedFilter(member_status_changed=JOIN_TRANSITION))
-async def bot_added_to_channel(event: types.ChatMemberUpdated):
+async def bot_added(event: types.ChatMemberUpdated):
     chat = event.chat
-    if chat.type in ["channel", "supergroup"]:
-        active_channels[chat.id] = chat.title
-        print(f"Меня добавили в: {chat.title} (ID: {chat.id})")
+    active_channels[chat.id] = chat.title
+    await bot.send_message(ADMIN_ID, f"✅ Добавлен в: {chat.title}\nТеперь я могу туда постить!")
 
-# 2. Отслеживаем удаление бота из каналов
-@dp.my_chat_member(ChatMemberUpdatedFilter(member_status_changed=LEAVE_TRANSITION))
-async def bot_removed_from_channel(event: types.ChatMemberUpdated):
-    chat_id = event.chat.id
-    if chat_id in active_channels:
-        del active_channels[chat_id]
-
-@dp.message(Command("start"))
-async def start_cmd(message: types.Message):
-    kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔎 Просмотр каналов", callback_data="list_channels")]
-    ])
-    await message.answer("Привет! Добавь меня в канал как админа, и я смогу туда постить.\nНажми кнопку ниже, чтобы управлять списком.", reply_markup=kb)
-
-# 3. Список каналов с кнопками управления
-@dp.callback_query(F.data == "list_channels")
-async def show_channels(callback: types.CallbackQuery):
+# 2. Обработка входящего сообщения для рассылки
+@dp.message(F.chat.type == 'private', F.from_user.id == ADMIN_ID)
+async def handle_new_post(message: types.Message, state: FSMContext):
     if not active_channels:
-        await callback.answer("Я еще не добавлен ни в один канал!", show_alert=True)
+        await message.answer("Сначала добавь меня в каналы и сделай админом.")
         return
 
-    text = "📢 Список каналов, где я нахожусь:\n\n"
+    # Если канал всего один — шлем сразу
+    if len(active_channels) == 1:
+        c_id = list(active_channels.keys())[0]
+        await message.copy_to(chat_id=c_id)
+        await message.answer(f"✅ Отправлено в единственный канал: {active_channels[c_id]}")
+        return
+
+    # Если больше одного — предлагаем выбор
+    # Сохраняем ID сообщения, которое нужно будет переслать
+    await state.update_data(msg_to_copy=message.message_id)
+    await state.set_state(PostState.choosing_destination)
+
     buttons = []
-    
     for c_id, c_title in active_channels.items():
-        # Кнопка для удаления (выхода из канала)
-        buttons.append([
-            InlineKeyboardButton(text=f"❌ Покинуть {c_title}", callback_data=f"leave_{c_id}")
-        ])
+        buttons.append([InlineKeyboardButton(text=f"📤 {c_title}", callback_data=f"send_{c_id}")])
     
+    buttons.append([InlineKeyboardButton(text="🌟 Во все каналы сразу", callback_data="send_all")])
+    buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_post")])
+
     kb = InlineKeyboardMarkup(inline_keyboard=buttons)
-    await callback.message.edit_text(text, reply_markup=kb)
+    await message.answer("Куда отправить это сообщение?", reply_markup=kb)
 
-# 4. Обработка нажатия на кнопку "Удалить/Покинуть"
-@dp.callback_query(F.data.startswith("leave_"))
-async def leave_channel_process(callback: types.CallbackQuery):
-    channel_id = int(callback.data.split("_")[1])
-    try:
-        await bot.leave_chat(channel_id)
-        if channel_id in active_channels:
-            del active_channels[channel_id]
-        await callback.answer("Бот успешно вышел из канала!")
-        await show_channels(callback) # Обновляем список
-    except Exception as e:
-        await callback.answer(f"Ошибка: {e}")
+# 3. Обработка выбора канала через кнопки
+@dp.callback_query(PostState.choosing_destination, F.data.startswith("send_"))
+async def process_callback_send(callback: types.CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    msg_id = data.get("msg_to_copy")
+    target = callback.data.replace("send_", "")
 
-# 5. Пересылка сообщений во ВСЕ подключенные каналы
-@dp.message()
-async def post_to_all(message: types.Message):
-    if message.chat.type == 'private' and active_channels:
-        sent_count = 0
+    if target == "all":
+        count = 0
         for c_id in active_channels.keys():
             try:
-                await message.copy_to(chat_id=c_id)
-                sent_count += 1
-            except:
-                continue
-        await message.answer(f"✅ Отправлено в {sent_count} канал(ов).")
+                await bot.copy_message(chat_id=c_id, from_chat_id=callback.message.chat.id, message_id=msg_id)
+                count += 1
+            except: pass
+        await callback.message.edit_text(f"✅ Разослано в {count} канала(ов).")
+    else:
+        try:
+            c_id = int(target)
+            await bot.copy_message(chat_id=c_id, from_chat_id=callback.message.chat.id, message_id=msg_id)
+            await callback.message.edit_text(f"✅ Отправлено в {active_channels[c_id]}")
+        except Exception as e:
+            await callback.message.edit_text(f"❌ Ошибка: {e}")
+
+    await state.clear()
+
+# Отмена
+@dp.callback_query(F.data == "cancel_post")
+async def cancel_post(callback: types.CallbackQuery, state: FSMContext):
+    await state.clear()
+    await callback.message.edit_text("Действие отменено.")
 
 async def main():
     await dp.start_polling(bot)
