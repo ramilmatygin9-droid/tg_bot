@@ -1,111 +1,139 @@
-import logging
-from telegram import Update, InlineQueryResultArticle, InputTextMessageContent
-from telegram.ext import Application, MessageHandler, filters, ContextTypes
+import asyncio
+import random
+import time
+from aiogram import Bot, Dispatcher, F, types
+from aiogram.filters import Command
+from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 
-# ТОКЕН - СЮДА (после отзыва старого, вставь НОВЫЙ)
-TOKEN = "8034796055:AAFBzzyK3IFs9BsKx02Al-fPCXSIFJ3uV90"
+# --- КОНФИГУРАЦИЯ ---
+TOKEN = "8034796055:AAFrpMOUowWvo6W3kGBsoMiq9RVjsaM2Qig"
+CHANNEL_ID = "@твой_канал"  # ЗАМЕНИ НА ID своего канала (например @my_channel)
+ADMIN_USERNAME = "Ramilpopa_4" # Твой ник в ТГ
 
-# Включим логирование
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+bot = Bot(token=TOKEN)
+dp = Dispatcher()
 
-# Словарь с ответами на разные типы сообщений
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    message = update.message
+users = {}
+
+def get_user_data(user_id, username, name="Игрок"):
+    if user_id not in users:
+        users[user_id] = {
+            "username": username,
+            "balance": 1000 if username == ADMIN_USERNAME else 250, 
+            "exp": 0, 
+            "level": 1, 
+            "last_bonus": 0
+        }
+    return users[user_id]
+
+# --- КЛАВИАТУРЫ ---
+def main_menu_kb(username):
+    builder = ReplyKeyboardBuilder()
+    builder.row(types.KeyboardButton(text="🎰 Казино"), types.KeyboardButton(text="🎲 Кости"))
+    builder.row(types.KeyboardButton(text="👤 Профиль"), types.KeyboardButton(text="🎁 Бонус"))
     
-    # 1. Если прислали премиум-эмодзи (специальный апдейт)
-    if message.text and message.text.startswith("👑"):
-        await message.reply_text(f"🎉 Ого! Ты прислал премиум-эмодзи: {message.text}\nСпасибо, {user.first_name}!")
-        return
+    # Если зашел Ramilpopa_4, добавляем ему кнопку админки
+    if username == ADMIN_USERNAME:
+        builder.row(types.KeyboardButton(text="⚙️ Админка"))
+        
+    return builder.as_markup(resize_keyboard=True)
+
+# --- ОБРАБОТЧИКИ ---
+
+@dp.message(Command("start"))
+async def start(message: types.Message):
+    u = get_user_data(message.from_user.id, message.from_user.username, message.from_user.first_name)
+    welcome_text = f"🎮 Привет, {message.from_user.first_name}!"
+    if message.from_user.username == ADMIN_USERNAME:
+        welcome_text += "\n🌟 Добро пожаловать, Создатель!"
     
-    # 2. Обычный текст
-    if message.text:
-        text_lower = message.text.lower()
-        if "привет" in text_lower:
-            await message.reply_text(f"Привет, {user.first_name}! 👋")
-        elif "как дела" in text_lower:
-            await message.reply_text("У меня всё отлично, а у тебя? 😊")
-        else:
-            await message.reply_text(f"Ты написал: «{message.text}»\nЯ тебя понял, {user.first_name}!")
+    await message.answer(welcome_text, reply_markup=main_menu_kb(message.from_user.username))
+
+# ЛОГИКА ОТПРАВКИ В КАНАЛ
+@dp.message(F.text & ~F.text.in_(["🎰 Казино", "🎲 Кости", "👤 Профиль", "🎁 Бонус", "⚙️ Админка"]))
+async def ask_channel_post(message: types.Message):
+    u = get_user_data(message.from_user.id, message.from_user.username)
+    u['temp_msg'] = message.text # Запоминаем текст
     
-    # 3. Стикеры (включая премиум-стикеры)
-    elif message.sticker:
-        premium_note = " (это премиум-стикер! ✨)" if message.sticker.is_premium else ""
-        await message.reply_text(
-            f"🎨 Классный стикер{premium_note}!\n"
-            f"Emoji: {message.sticker.emoji or 'нет'}"
-        )
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Отправить в канал", callback_data="send_to_chan")
+    builder.button(text="❌ Отмена", callback_data="cancel_post")
     
-    # 4. Фото
-    elif message.photo:
-        await message.reply_text(f"📸 Красивое фото! Спасибо, {user.first_name}!")
-    
-    # 5. Голосовое сообщение
-    elif message.voice:
-        await message.reply_text("🎙 Услышал твой голос! (бот не умеет распознавать речь, но спасибо)")
-    
-    # 6. Видео
-    elif message.video:
-        await message.reply_text("🎬 Видео получено! Интересно, что там?")
-    
-    # 7. Аудио/музыка
-    elif message.audio:
-        await message.reply_text("🎵 Музыка! Классный трек!")
-    
-    # 8. Документ/файл
-    elif message.document:
-        await message.reply_text(f"📄 Файл «{message.document.file_name}» получен!")
-    
-    # 9. Геолокация
-    elif message.location:
-        await message.reply_text("📍 Ага, скинул геолокацию! (но я не слежу, честно)")
-    
-    # 10. Контакт
-    elif message.contact:
-        await message.reply_text(f"📞 Контакт: {message.contact.first_name} {message.contact.last_name or ''}")
-    
-    # 11. Опрос
-    elif message.poll:
-        await message.reply_text("📊 Опрос получен! Результаты узнаю позже.")
-    
-    # 12. Всё остальное (dice, game, invoice и т.д.)
+    await message.answer(f"Ты написал: \"{message.text}\"\nХочешь опубликовать это в канале?", 
+                         reply_markup=builder.as_markup())
+
+@dp.callback_query(F.data == "send_to_chan")
+async def send_to_chan(callback: types.CallbackQuery):
+    u = users.get(callback.from_user.id)
+    if u and 'temp_msg' in u:
+        try:
+            await bot.send_message(CHANNEL_ID, f"📢 Сообщение от @{callback.from_user.username}:\n\n{u['temp_msg']}")
+            await callback.answer("Успешно отправлено!", show_alert=True)
+            await callback.message.edit_text("Ваш пост опубликован в канале!")
+            u.pop('temp_msg')
+        except Exception as e:
+            await callback.answer("Ошибка! Проверь, что бот админ в канале.", show_alert=True)
     else:
-        await message.reply_text(f"✅ Получил твоё сообщение, {user.first_name}! (это какой-то особый тип)")
+        await callback.answer("Текст не найден.")
 
-# Команда /start
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    await update.message.reply_text(
-        f"Привет, {user.first_name}! 👋\n\n"
-        "Я бот-ответчик. Пиши мне что угодно:\n"
-        "• Текст\n"
-        "• Стикеры (включая премиум)\n"
-        "• Фото, видео, голосовые\n"
-        "• Премиум-эмодзи (коронованные)\n\n"
-        "Я всё равно отвечу! 😎"
-    )
-
-# Команда /help
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "📌 Что я умею?\n"
-        "- Отвечать на любые сообщения\n"
-        "- Распознавать премиум-эмодзи 👑\n"
-        "- Отвечать на премиум-стикеры ✨\n"
-        "- Реагировать на фото, видео, голосовые\n\n"
-        "Просто напиши мне что-нибудь!"
-    )
-
-def main():
-    app = Application.builder().token(TOKEN).build()
+# ИГРЫ С УТЕШИТЕЛЬНЫМ ПРИЗОМ
+@dp.message(F.text == "🎲 Кости")
+async def dice(message: types.Message):
+    u = get_user_data(message.from_user.id, message.from_user.username)
+    if u['balance'] < 50: return await message.answer("Мало монет!")
     
-    # Обработчик на ВСЕ сообщения (кроме команд)
-    app.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, handle_message))
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_command))
+    u['balance'] -= 50
+    user_v = random.randint(1, 6)
+    bot_v = random.randint(1, 6)
     
-    print("✅ Бот запущен и слушает сообщения...")
-    app.run_polling()
+    if user_v > bot_v:
+        u['balance'] += 120
+        await message.answer(f"🎲 {user_v} vs {bot_v}: Победа! +120 монет.")
+    elif user_v == bot_v:
+        u['balance'] += 50
+        await message.answer(f"🎲 {user_v} vs {bot_v}: Ничья. Возврат.")
+    else:
+        u['balance'] += 10 # Утешительный приз
+        await message.answer(f"🎲 {user_v} vs {bot_v}: Проигрыш. Но держи +10 монет утешительно!")
+
+@dp.message(F.text == "🎰 Казино")
+async def casino(message: types.Message):
+    u = get_user_data(message.from_user.id, message.from_user.username)
+    if u['balance'] < 100: return await message.answer("Нужно 100 монет!")
+    u['balance'] -= 100
+    res = await message.answer_dice(emoji="🎰")
+    await asyncio.sleep(4)
+    if res.dice.value in [1, 22, 43, 64]:
+        u['balance'] += 2000
+        await message.answer("💰 ДЖЕКПОТ! +2000 монет!")
+    else:
+        u['balance'] += 15 # Утешительный приз
+        await message.answer("Не повезло. Но держи +15 монет утешительно!")
+
+@dp.message(F.text == "👤 Профиль")
+async def profile(message: types.Message):
+    u = get_user_data(message.from_user.id, message.from_user.username)
+    await message.answer(f"👤 Игрок: @{u['username']}\n💰 Баланс: {u['balance']} монет")
+
+@dp.message(F.text == "⚙️ Админка")
+async def admin_panel(message: types.Message):
+    if message.from_user.username != ADMIN_USERNAME:
+        return await message.answer("У тебя нет прав!")
+    await message.answer("👑 Панель управления создателя:\n1. Все системы работают.\n2. Твой баланс неограничен (почти).")
+
+@dp.message(F.text == "🎁 Бонус")
+async def bonus(message: types.Message):
+    u = get_user_data(message.from_user.id, message.from_user.username)
+    now = time.time()
+    if now - u['last_bonus'] < 86400:
+        await message.answer("Приходи завтра!")
+    else:
+        u['balance'] += 500
+        u['last_bonus'] = now
+        await message.answer("🎁 Получено 500 монет!")
+
+async def main():
+    await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
