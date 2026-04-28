@@ -3,28 +3,34 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 
 API_TOKEN = '8034796055:AAFBzzyK3IFs9BsKx02Al-fPCXSIFJ3uV90'
-CHANNEL_ID = -1008462392581 
+# ⚠️ ЗАМЕНИТЕ НА ПРАВИЛЬНЫЙ ID КАНАЛА (получите через /get_chat_id)
+CHANNEL_ID = -1008462392581  # ❌ Скорее всего неправильный
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
 
-# Обработка команды /start
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     await message.answer("Бот готов к работе!")
 
-# Обработка команды /play
 @dp.message(Command("play"))
 async def cmd_play(message: types.Message):
     await message.answer("Запускаю игру... (или любое другое действие)")
-    # Здесь можно добавить логику твоей игры
 
-# Пересылка всех остальных сообщений в канал
+# Добавьте эту команду для получения ID чата
+@dp.message(Command("get_chat_id"))
+async def get_chat_id(message: types.Message):
+    await message.answer(f"ID этого чата: {message.chat.id}")
+
 @dp.message()
 async def forward_handler(message: types.Message):
-    # Проверяем, что это не команда (чтобы не пересылать /play в канал)
+    # Пропускаем команды
     if message.text and message.text.startswith('/'):
-        return 
+        return
+    
+    # Пропускаем служебные сообщения
+    if not message.text and not message.photo and not message.video:
+        return
 
     try:
         await bot.forward_message(
@@ -32,12 +38,12 @@ async def forward_handler(message: types.Message):
             from_chat_id=message.chat.id, 
             message_id=message.message_id
         )
-        await message.reply("Сообщение переслано в канал!")
+        await message.reply("✅ Сообщение переслано в канал!")
     except Exception as e:
-        await message.reply(f"Ошибка при пересылке: {e}")
+        await message.reply(f"❌ Ошибка: {e}\nПроверьте, что бот администратор канала и ID правильный")
 
 async def main():
-    print("Бот запущен и ждет команд...")
+    print("Бот запущен. Напишите /get_chat_id в чате/канале, куда добавили бота")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
