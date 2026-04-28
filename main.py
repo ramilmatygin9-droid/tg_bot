@@ -5,7 +5,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 
-from bot.config import BOT_TOKEN
+from bot.config import "8693763218:AAGoc7Y2xTFZeXsaZ_mzksRkFUhOnA3Zj10"
 from bot.database import db
 from bot.handlers import setup, moderation, captcha, members, statistics
 from bot.utils.daily_digest import daily_digest_loop
