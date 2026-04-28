@@ -1,47 +1,83 @@
 import asyncio
-import random
-from aiogram import Bot, Dispatcher, types, F
+import logging
+from aiogram import Bot, Dispatcher
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
+from aiogram.fsm.storage.memory import MemoryStorage
 
-# Твой токен
-TOKEN = "8693763218:AAGoc7Y2xTFZeXsaZ_mzksRkFUhOnA3Zj10"
+from bot.config import BOT_TOKEN
+from bot.database import db
+from bot.handlers import setup, moderation, captcha, members, statistics
+from bot.utils.daily_digest import daily_digest_loop
 
-bot = Bot(token=TOKEN)
-dp = Dispatcher()
+# Настройка логирования
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s] %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 
-# Конструктор унижений: части, из которых бот собирает ответ
-PART1 = ["Слышь, ты, ", "Эй, ", "Че ты, ", "Слушай сюда, ", "Ты, ", "Чё, борзый? "]
-PART2 = ["чучело огородное, ", "жертва аборта, ", "недоразумение ходячее, ", "клоун дырявый, ", "отброс эволюции, ", "кусок тормоза, "]
-PART3 = [
-    "рот закрой, пока мухи не нагадили.",
-    "в глаза мне смотри, когда я с тобой базарю!",
-    "ты вообще понимаешь, что ты никто?",
-    "твой лепет только на помойке слушать.",
-    "потеряйся в пространстве, пока я тебе не помог.",
-    "тебе в детстве вместо соски кирпич давали?",
-    "ты зачем вообще интернет себе провел, деградант?",
-    "завали свою хлеборезку и не отсвечивай."
-]
-PART4 = [" Понял меня?!", " Ты свободен.", " Иди плачь мамочке.", " Теряйся!", " Твой уровень — ноль.", " Гуляй, Вася."]
+# Отключаем шумные логи aiogram о необработанных обновлениях
+logging.getLogger('aiogram.event').setLevel(logging.WARNING)
 
-@dp.message(F.text)
-async def generate_roast(message: types.Message):
-    # Бот собирает случайную фразу из 4-х частей
-    p1 = random.choice(PART1)
-    p2 = random.choice(PART2)
-    p3 = random.choice(PART3)
-    p4 = random.choice(PART4)
-    
-    full_roast = f"{p1}{p2}{p3}{p4}"
-    
-    # Отвечаем на любое сообщение
-    await message.reply(full_roast)
+logger = logging.getLogger(__name__)
+
 
 async def main():
-    print("Жирапес-Генератор запущен. Берегите нервы!")
-    await dp.start_polling(bot)
+    """Главная функция запуска бота"""
+    
+    # Проверка токена
+    if not BOT_TOKEN:
+        logger.error("8693763218:AAGoc7Y2xTFZeXsaZ_mzksRkFUhOnA3Zj10")
+        return
+    
+    # Инициализация бота
+    bot = Bot(
+        token=BOT_TOKEN,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+    )
+    
+    # Инициализация диспетчера с хранилищем состояний
+    dp = Dispatcher(storage=MemoryStorage())
+    
+    # Подключение к БД
+    logger.info("Connecting to database...")
+    await db.connect()
+    logger.info("Database connected!")
+    
+    # Регистрация роутеров
+    dp.include_router(setup.router)
+    dp.include_router(statistics.router)  # Статистика
+    dp.include_router(captcha.router)  # ВАЖНО: капча должна быть ДО moderation (чтобы ответы на капчу обрабатывались первыми)
+    dp.include_router(moderation.router)  # Групповая модерация (удаление сообщений от pending юзеров)
+    dp.include_router(members.router)
+    
+    # Запуск polling
+    logger.info("Starting bot...")
+    digest_task = asyncio.create_task(daily_digest_loop(bot))
+    try:
+        await dp.start_polling(
+            bot,
+            allowed_updates=dp.resolve_used_update_types(),
+            drop_pending_updates=True  # Пропускаем старые обновления при старте
+        )
+    finally:
+        digest_task.cancel()
+        try:
+            await digest_task
+        except asyncio.CancelledError:
+            pass
+        # Закрытие соединений при остановке
+        await db.close()
+        await bot.session.close()
+        logger.info("Bot stopped.")
+
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
-    except:
-        print("Жирапес выключен.")
+    except KeyboardInterrupt:
+        logger.info("Bot stopped by user")
+# Твой токен
+TOKEN = "8693763218:AAGoc7Y2xTFZeXsaZ_mzksRkFUhOnA3Zj10"
+
