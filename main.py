@@ -4,7 +4,7 @@ from aiogram.filters import Command
 
 API_TOKEN = '8034796055:AAFBzzyK3IFs9BsKx02Al-fPCXSIFJ3uV90'
 # ⚠️ ЗАМЕНИТЕ НА ПРАВИЛЬНЫЙ ID КАНАЛА (получите через /get_chat_id)
-CHANNEL_ID = -1008462392581  # ❌ Скорее всего неправильный
+CHANNEL_ID = 8462392581 # ❌ Скорее всего неправильный
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
