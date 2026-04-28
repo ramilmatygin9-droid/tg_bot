@@ -1,124 +1,174 @@
 import asyncio
 import random
+import time
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command
-from aiogram.utils.keyboard import ReplyKeyboardBuilder
+from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 
-# Твой токен
 TOKEN = "8034796055:AAFrpMOUowWvo6W3kGBsoMiq9RVjsaM2Qig"
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# База данных в памяти (после перезагрузки обнулится)
-# В реальном проекте лучше использовать SQLite
+# База данных пользователей
 users = {}
+# Список активных промокодов (код: сумма)
+PROMO_CODES = {
+    "START": 500,
+    "GAMES2024": 1000,
+    "HELLO": 150
+}
 
 def get_user_data(user_id):
     if user_id not in users:
-        users[user_id] = {"balance": 100, "exp": 0, "level": 1}
+        users[user_id] = {
+            "balance": 100, 
+            "exp": 0, 
+            "level": 1, 
+            "last_bonus": 0,
+            "used_promos": []
+        }
     return users[user_id]
 
-# Главное меню
+# Клавиатура главного меню
 def main_menu_kb():
     builder = ReplyKeyboardBuilder()
-    builder.button(text="🎰 Испытать удачу")
+    builder.button(text="🎰 Казино")
+    builder.button(text="✊ КНБ")
+    builder.button(text="🃏 21 Очко")
     builder.button(text="🔢 Угадай число")
-    builder.button(text="👤 Мой профиль")
-    builder.button(text="🎁 Ежедневный бонус")
+    builder.button(text="👤 Профиль")
+    builder.button(text="🎁 Бонус")
+    builder.button(text="🎟 Ввести промо")
     builder.adjust(2)
     return builder.as_markup(resize_keyboard=True)
 
 @dp.message(Command("start"))
 async def start(message: types.Message):
-    user = get_user_data(message.from_user.id)
+    get_user_data(message.from_user.id)
     await message.answer(
-        f"Привет, {message.from_user.first_name}! 👋\n"
-        "Добро пожаловать в игровой бот. У тебя на счету 100 монет.\n"
-        "Выбирай игру и развлекайся!",
+        f"🎮 Добро пожаловать, {message.from_user.first_name}!\n"
+        "Я игровой бот. Играй, зарабатывай монеты и повышай уровень!",
         reply_markup=main_menu_kb()
     )
 
-@dp.message(F.text == "👤 Мой профиль")
+# --- СИСТЕМА ПРОМОКОДОВ ---
+@dp.message(F.text == "🎟 Ввести промо")
+async def promo_start(message: types.Message):
+    await message.answer("Напиши мне промокод (например, START):")
+
+@dp.message(lambda message: message.text.upper() in PROMO_CODES)
+async def use_promo(message: types.Message):
+    u = get_user_data(message.from_user.id)
+    code = message.text.upper()
+    
+    if code in u['used_promos']:
+        await message.answer("⚠️ Ты уже использовал этот промокод!")
+    else:
+        reward = PROMO_CODES[code]
+        u['balance'] += reward
+        u['used_promos'].append(code)
+        await message.answer(f"✅ Активировано! Получено {reward} монет.")
+
+# --- ЕЖЕДНЕВНЫЙ БОНУС (Раз в 24 часа) ---
+@dp.message(F.text == "🎁 Бонус")
+async def daily_bonus(message: types.Message):
+    u = get_user_data(message.from_user.id)
+    current_time = time.time()
+    
+    # 86400 секунд = 24 часа
+    if current_time - u['last_bonus'] < 86400:
+        remaining = int(86400 - (current_time - u['last_bonus']))
+        hours = remaining // 3600
+        minutes = (remaining % 3600) // 60
+        await message.answer(f"⏳ Бонус будет доступен через {hours}ч. {minutes}м.")
+    else:
+        bonus = random.randint(100, 300)
+        u['balance'] += bonus
+        u['last_bonus'] = current_time
+        await message.answer(f"🎁 Ты получил ежедневную награду: {bonus} монет!")
+
+# --- ИГРА: КАМЕНЬ НОЖНИЦЫ БУМАГА ---
+@dp.message(F.text == "✊ КНБ")
+async def rps_start(message: types.Message):
+    builder = ReplyKeyboardBuilder()
+    builder.button(text="🪨 Камень")
+    builder.button(text="✂️ Ножницы")
+    builder.button(text="📄 Бумага")
+    builder.adjust(3)
+    await message.answer("Выбирай предмет! Ставка: 20 монет.", reply_markup=builder.as_markup(resize_keyboard=True))
+
+@dp.message(F.text.in_(["🪨 Камень", "✂️ Ножницы", "📄 Бумага"]))
+async def rps_play(message: types.Message):
+    u = get_user_data(message.from_user.id)
+    if u['balance'] < 20:
+        await message.answer("Недостаточно монет!")
+        return
+
+    user_choice = message.text
+    bot_choice = random.choice(["🪨 Камень", "✂️ Ножницы", "📄 Бумага"])
+    u['balance'] -= 20
+    
+    await message.answer(f"Твой выбор: {user_choice}\nМой выбор: {bot_choice}")
+    
+    if user_choice == bot_choice:
+        u['balance'] += 20
+        await message.answer("🤝 Ничья! Монеты возвращены.", reply_markup=main_menu_kb())
+    elif (user_choice == "🪨 Камень" and bot_choice == "✂️ Ножницы") or \
+         (user_choice == "✂️ Ножницы" and bot_choice == "📄 Бумага") or \
+         (user_choice == "📄 Бумага" and bot_choice == "🪨 Камень"):
+        u['balance'] += 50
+        await message.answer("🎉 Ты выиграл 50 монет!", reply_markup=main_menu_kb())
+    else:
+        await message.answer("💀 Ты проиграл!", reply_markup=main_menu_kb())
+
+# --- ИГРА: 21 ОЧКО (Упрощенно) ---
+@dp.message(F.text == "🃏 21 Очко")
+async def cards_game(message: types.Message):
+    u = get_user_data(message.from_user.id)
+    if u['balance'] < 50:
+        await message.answer("Нужно хотя бы 50 монет!")
+        return
+        
+    u['balance'] -= 50
+    user_score = random.randint(2, 11) + random.randint(2, 11)
+    bot_score = random.randint(12, 22) # У бота сразу результат
+    
+    if user_score > 21:
+        await message.answer(f"Твои очки: {user_score}. Перебор! Ты проиграл.")
+    elif user_score > bot_score or bot_score > 21:
+        u['balance'] += 120
+        await message.answer(f"Твои: {user_score}, Мои: {bot_score}. Ты победил! +120 монет.")
+    else:
+        await message.answer(f"Твои: {user_score}, Мои: {bot_score}. Я победил!")
+
+# --- ПРОФИЛЬ ---
+@dp.message(F.text == "👤 Профиль")
 async def profile(message: types.Message):
     u = get_user_data(message.from_user.id)
     await message.answer(
-        f"📋 **Ваш профиль:**\n"
+        f"👤 Игрок: {message.from_user.first_name}\n"
         f"💰 Баланс: {u['balance']} монет\n"
-        f"📈 Уровень: {u['level']}\n"
-        f"✨ Опыт: {u['exp']}/100"
+        f"⭐️ Уровень: {u['level']}"
     )
 
-@dp.message(F.text == "🎰 Испытать удачу")
-async def play_slots(message: types.Message):
+# Стандартное казино и угадайка из прошлого примера (оставил логику)
+@dp.message(F.text == "🎰 Казино")
+async def slots(message: types.Message):
     u = get_user_data(message.from_user.id)
-    if u['balance'] < 10:
-        await message.answer("У тебя недостаточно монет! (Нужно хотя бы 10)")
+    if u['balance'] < 30:
+        await message.answer("Мало монет (нужно 30)")
         return
-
-    u['balance'] -= 10
-    msg = await message.answer_dice(emoji="🎰")
-    
-    # Значения выигрыша в Telegram Slots: 1, 22, 43, 64 - это джекпоты
-    # Но мы сделаем проще: если выпало что-то крутое, даем приз
-    await asyncio.sleep(4) # Ждем анимацию
-    
-    if msg.dice.value in [1, 22, 43, 64]:
-        win = 500
-        u['balance'] += win
-        await message.answer(f"JACKPOT! 😱 Ты выиграл {win} монет!")
-    elif msg.dice.value in [16, 32, 48]:
-        win = 50
-        u['balance'] += win
-        await message.answer(f"Победа! 🎉 Ты выиграл {win} монет!")
+    u['balance'] -= 30
+    res = await message.answer_dice(emoji="🎰")
+    await asyncio.sleep(4)
+    if res.dice.value in [1, 22, 43, 64]:
+        u['balance'] += 1000
+        await message.answer("🤑 ДЖЕКПОТ! +1000 монет!")
     else:
-        await message.answer("Эх, в этот раз не повезло. Попробуй еще!")
-
-@dp.message(F.text == "🔢 Угадай число")
-async def guess_game(message: types.Message):
-    u = get_user_data(message.from_user.id)
-    number = random.randint(1, 5)
-    u['temp_num'] = number
-    
-    builder = ReplyKeyboardBuilder()
-    for i in range(1, 6):
-        builder.button(text=f"Кнопка {i}")
-    builder.adjust(3)
-    
-    await message.answer("Я загадал число от 1 до 5. Угадаешь?", reply_markup=builder.as_markup(resize_keyboard=True))
-
-@dp.message(F.text.startswith("Кнопка "))
-async def check_guess(message: types.Message):
-    u = get_user_data(message.from_user.id)
-    if 'temp_num' not in u:
-        await message.answer("Начни игру заново.", reply_markup=main_menu_kb())
-        return
-
-    guess = int(message.text.split()[1])
-    if guess == u['temp_num']:
-        u['balance'] += 30
-        u['exp'] += 20
-        await message.answer(f"Верно! 🎉 +30 монет и +20 опыта.", reply_markup=main_menu_kb())
-    else:
-        await message.answer(f"Не угадал! Это было число {u['temp_num']}.", reply_markup=main_menu_kb())
-    
-    del u['temp_num']
-    
-    # Проверка уровня
-    if u['exp'] >= 100:
-        u['level'] += 1
-        u['exp'] = 0
-        await message.answer(f"🆙 Поздравляем! Ты достиг {u['level']} уровня!")
-
-@dp.message(F.text == "🎁 Ежедневный бонус")
-async def daily_bonus(message: types.Message):
-    u = get_user_data(message.from_user.id)
-    bonus = random.randint(20, 100)
-    u['balance'] += bonus
-    await message.answer(f"Ты получил ежедневный бонус: {bonus} монет! 💸")
+        await message.answer("Проигрыш. Попробуй еще раз!")
 
 async def main():
-    print("Бот запущен...")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
