@@ -1,207 +1,125 @@
-from Source.UI.Menu import Decorators, ReplyKeyboards
-from Source.Core.Mailing import Mailer
-from Source.CLI import Interaction
+import asyncio
+import random
+from aiogram import Bot, Dispatcher, F, types
+from aiogram.filters import Command
+from aiogram.utils.keyboard import ReplyKeyboardBuilder
 
-from dublib.CLI.Terminalyzer import Command, ParametersTypes, Terminalyzer
-from dublib.Methods.Filesystem import MakeRootDirectories, ReadJSON
-from dublib.Methods.System import CheckPythonMinimalVersion, Clear
-from dublib.TelebotUtils.Users import UsersManager
-from dublib.CLI.TextStyler import TextStyler
+# Твой токен
+TOKEN = "8034796055:AAFrpMOUowWvo6W3kGBsoMiq9RVjsaM2Qig"
 
-import os
+bot = Bot(token=TOKEN)
+dp = Dispatcher()
 
-import requests
-from telebot import TeleBot, types
+# База данных в памяти (после перезагрузки обнулится)
+# В реальном проекте лучше использовать SQLite
+users = {}
 
-#==========================================================================================#
-# >>>>> ИНИЦИАЛИЗАЦИЯ <<<<< #
-#==========================================================================================#
+def get_user_data(user_id):
+    if user_id not in users:
+        users[user_id] = {"balance": 100, "exp": 0, "level": 1}
+    return users[user_id]
 
-CheckPythonMinimalVersion(3, 10)
-MakeRootDirectories(["Data/Sessions"])
-Settings = ReadJSON("Settings.json")
+# Главное меню
+def main_menu_kb():
+    builder = ReplyKeyboardBuilder()
+    builder.button(text="🎰 Испытать удачу")
+    builder.button(text="🔢 Угадай число")
+    builder.button(text="👤 Мой профиль")
+    builder.button(text="🎁 Ежедневный бонус")
+    builder.adjust(2)
+    return builder.as_markup(resize_keyboard=True)
 
-#==========================================================================================#
-# >>>>> НАСТРОЙКА ОБРАБОТЧИКА КОМАНД <<<<< #
-#==========================================================================================#
+@dp.message(Command("start"))
+async def start(message: types.Message):
+    user = get_user_data(message.from_user.id)
+    await message.answer(
+        f"Привет, {message.from_user.first_name}! 👋\n"
+        "Добро пожаловать в игровой бот. У тебя на счету 100 монет.\n"
+        "Выбирай игру и развлекайся!",
+        reply_markup=main_menu_kb()
+    )
 
-Com = Command("run", "Запускает скрипт с определёнными параметрами.")
-ComPos = Com.create_position("MODE", "Режим запуска SpamBot.")
-Com.add_flag("s", "Запускает бота-редактора Telegram.")
-Com.add_flag("c", "Запускает CLI.")
-Com.add_key("key", ParametersTypes.Number, "Указывает ключ пользователя для автоматического входа.")
+@dp.message(F.text == "👤 Мой профиль")
+async def profile(message: types.Message):
+    u = get_user_data(message.from_user.id)
+    await message.answer(
+        f"📋 **Ваш профиль:**\n"
+        f"💰 Баланс: {u['balance']} монет\n"
+        f"📈 Уровень: {u['level']}\n"
+        f"✨ Опыт: {u['exp']}/100"
+    )
 
-Analyzer = Terminalyzer()
-Analyzer.enable_help(True)
-Analyzer.help_translation.command_description = "Выводит список поддерживаемых команд. Для деталей, добавьте команду как аргумент."
-Analyzer.help_translation.argument_description = "Название команды, для которой вы хотите получить расширенную справку."
-ParsedCommand = Analyzer.check_commands(Com)
-Users = UsersManager("Data/Users")
+@dp.message(F.text == "🎰 Испытать удачу")
+async def play_slots(message: types.Message):
+    u = get_user_data(message.from_user.id)
+    if u['balance'] < 10:
+        await message.answer("У тебя недостаточно монет! (Нужно хотя бы 10)")
+        return
 
-#==========================================================================================#
-# >>>>> ЗАПУСК CLI-РЕЖИМА <<<<< #
-#==========================================================================================#
+    u['balance'] -= 10
+    msg = await message.answer_dice(emoji="🎰")
+    
+    # Значения выигрыша в Telegram Slots: 1, 22, 43, 64 - это джекпоты
+    # Но мы сделаем проще: если выпало что-то крутое, даем приз
+    await asyncio.sleep(4) # Ждем анимацию
+    
+    if msg.dice.value in [1, 22, 43, 64]:
+        win = 500
+        u['balance'] += win
+        await message.answer(f"JACKPOT! 😱 Ты выиграл {win} монет!")
+    elif msg.dice.value in [16, 32, 48]:
+        win = 50
+        u['balance'] += win
+        await message.answer(f"Победа! 🎉 Ты выиграл {win} монет!")
+    else:
+        await message.answer("Эх, в этот раз не повезло. Попробуй еще!")
 
-if ParsedCommand:
+@dp.message(F.text == "🔢 Угадай число")
+async def guess_game(message: types.Message):
+    u = get_user_data(message.from_user.id)
+    number = random.randint(1, 5)
+    u['temp_num'] = number
+    
+    builder = ReplyKeyboardBuilder()
+    for i in range(1, 6):
+        builder.button(text=f"Кнопка {i}")
+    builder.adjust(3)
+    
+    await message.answer("Я загадал число от 1 до 5. Угадаешь?", reply_markup=builder.as_markup(resize_keyboard=True))
 
-	if ParsedCommand.name == "help":
-		exit(0)
+@dp.message(F.text.startswith("Кнопка "))
+async def check_guess(message: types.Message):
+    u = get_user_data(message.from_user.id)
+    if 'temp_num' not in u:
+        await message.answer("Начни игру заново.", reply_markup=main_menu_kb())
+        return
 
-	elif not ParsedCommand.check_flag("s"):
-		UserKey = ParsedCommand.get_key_value("key")
-		InteractionObject = Interaction(Settings)
-		InteractionObject.title()
-		InteractionObject.auth(UserKey)
-		InteractionObject.run()
+    guess = int(message.text.split()[1])
+    if guess == u['temp_num']:
+        u['balance'] += 30
+        u['exp'] += 20
+        await message.answer(f"Верно! 🎉 +30 монет и +20 опыта.", reply_markup=main_menu_kb())
+    else:
+        await message.answer(f"Не угадал! Это было число {u['temp_num']}.", reply_markup=main_menu_kb())
+    
+    del u['temp_num']
+    
+    # Проверка уровня
+    if u['exp'] >= 100:
+        u['level'] += 1
+        u['exp'] = 0
+        await message.answer(f"🆙 Поздравляем! Ты достиг {u['level']} уровня!")
 
-else:
-	InteractionObject = Interaction(Settings)
-	InteractionObject.title()
-	InteractionObject.auth()
-	InteractionObject.run()
-	
-#==========================================================================================#
-# >>>>> ЗАПУСК БОТА <<<<< #
-#==========================================================================================#
+@dp.message(F.text == "🎁 Ежедневный бонус")
+async def daily_bonus(message: types.Message):
+    u = get_user_data(message.from_user.id)
+    bonus = random.randint(20, 100)
+    u['balance'] += bonus
+    await message.answer(f"Ты получил ежедневный бонус: {bonus} монет! 💸")
 
-Clear()
-Bot = TeleBot(Settings["8034796055:AAFrpMOUowWvo6W3kGBsoMiq9RVjsaM2Qig"])
-BotUsername = Bot.get_me().username
-print(TextStyler(f"Telegram бот инициализирован на https://t.me/{BotUsername}!").colorize.green)
-MainPy, RunCommand = TextStyler("main.py").decorate.bold, TextStyler("run").decorate.bold
-print(f"Чтобы использовать CLI запустите отдельный экземпляр {MainPy} без команды {RunCommand}.")
-print("Ctrl + C для завершения процесса…")
+async def main():
+    print("Бот запущен...")
+    await dp.start_polling(bot)
 
-@Bot.message_handler(commands = ["start"])
-def BotProcessCommand(Message: types.Message):
-	User = Users.auth(Message.from_user)
-	User.set_property("message", None, force = False)
-	User.set_property("attachments", list(), force = False)
-
-	if User.has_permissions("admin"):
-		Bot.send_message(
-			chat_id = Message.chat.id,
-			text = f"🔒 Доступ к функциям <b>разрешён</b>. Ваш ключ: <code>{User.id}</code>.",
-			parse_mode = "HTML",
-			reply_markup = ReplyKeyboards.menu()
-		)
-
-	elif Message.text.endswith(Settings["password"]):
-		Bot.send_message(
-			chat_id = Message.chat.id,
-			text = f"🔒 Пароль принят. Доступ к функциям <b>разрешён</b>. Ваш ключ: <code>{User.id}</code>.",
-			parse_mode = "HTML",
-			reply_markup = ReplyKeyboards.menu()
-		)
-		User.add_permissions("admin")
-		
-	else:
-		Bot.send_message(
-			chat_id = Message.chat.id,
-			text = "🔒 Доступ к функциям <b>запрещён</b>. Запросите пароль у администратора.",
-			parse_mode = "HTML"
-		)
-
-Decorators.reply_buttons(Bot, Users)
-
-@Bot.message_handler(content_types = ["text"])
-def BotProcessText(Message: types.Message):
-	User = Users.auth(Message.from_user)
-
-	if User.expected_type == "message":
-		User.set_property("message", Message.html_text)
-		User.set_expected_type(None)
-		Bot.send_message(
-			chat_id = Message.chat.id,
-			text = "Текст сохранён."
-		)
-
-@Bot.message_handler(content_types = ["photo"])
-def BotProcessText(Message: types.Message):
-	User = Users.auth(Message.from_user)
-
-	if User.expected_type == "image":
-		User.set_expected_type(None)
-		Bot.send_chat_action(Message.chat.id, "typing")
-
-		try:
-			Photo = Message.photo[-1]
-			FileInfo = Bot.get_file(Photo.file_id)
-			Filename = FileInfo.file_path.split("/")[-1]
-			FileURL = f"https://api.telegram.org/file/bot{Bot.token}/{FileInfo.file_path}"
-			FileDirectory = f"Data/Temp/{User.id}/Attachments"
-			if not os.path.exists(FileDirectory): os.makedirs(FileDirectory)
-			with open(f"{FileDirectory}/{Filename}", "wb") as FileWriter: FileWriter.write(requests.get(FileURL).content)
-
-			Attachments: list[dict] = User.get_property("attachments")
-			Attachments.append({"filename": Filename, "type": "photo"})
-			User.set_property("attachments", Attachments)
-
-			Bot.send_message(
-				chat_id = Message.chat.id,
-				text = "Изображение добавлено в сообщение.",
-				reply_markup = ReplyKeyboards.message(User)
-			)
-
-		except:
-			Bot.send_message(
-				chat_id = Message.chat.id,
-				text = "Не удаётся использовать это изображение для рассылки."
-			)
-
-@Bot.message_handler(content_types = ["video"])
-def BotProcessText(Message: types.Message):
-	User = Users.auth(Message.from_user)
-
-	if User.expected_type == "video":
-		User.set_expected_type(None)
-		Bot.send_chat_action(Message.chat.id, "typing")
-
-		try:
-			Video = Message.video
-			FileInfo = Bot.get_file(Video.file_id)
-			Filename = FileInfo.file_path.split("/")[-1]
-			FileURL = f"https://api.telegram.org/file/bot{Bot.token}/{FileInfo.file_path}"
-			FileDirectory = f"Data/Temp/{User.id}/Attachments"
-			if not os.path.exists(FileDirectory): os.makedirs(FileDirectory)
-			with open(f"{FileDirectory}/{Filename}", "wb") as FileWriter: FileWriter.write(requests.get(FileURL).content)
-
-			Attachments: list[dict] = User.get_property("attachments")
-			Attachments.append({"filename": Filename, "type": "video"})
-			User.set_property("attachments", Attachments)
-
-			Bot.send_message(
-				chat_id = Message.chat.id,
-				text = "Видео добавлено в сообщение.",
-				reply_markup = ReplyKeyboards.message(User)
-			)
-
-		except:
-			Bot.send_message(
-				chat_id = Message.chat.id,
-				text = "Не удаётся использовать это видео для рассылки."
-			)
-
-@Bot.message_handler(content_types = ["document"])
-def BotProcessText(Message: types.Message):
-	User = Users.auth(Message.from_user)
-
-	if User.expected_type == "targets":
-		User.set_expected_type(None)
-
-		try:
-			Document = Message.document
-			FileInfo = Bot.get_file(Document.file_id)
-			FileURL = f"https://api.telegram.org/file/bot{Bot.token}/{FileInfo.file_path}"
-			FileDirectory = f"Data/Temp/{User.id}"
-			if not os.path.exists(FileDirectory): os.makedirs(FileDirectory)
-			with open(f"{FileDirectory}/targets.xlsx", "wb") as FileWriter: FileWriter.write(requests.get(FileURL).content)
-			Mailer().parse_targets_from_excel(User)
-			Bot.send_message(chat_id = Message.chat.id, text = "Выборка сохранена.")
-
-		except ZeroDivisionError:
-			Bot.send_message(chat_id = Message.chat.id, text = "Не удалось изъять выборку из данного файла.")
-
-Bot.infinity_polling()
-    print(TextStyler(f"Бот запущен!").colorize.green)
-    Bot.infinity_polling()
+if __name__ == "__main__":
+    asyncio.run(main())
