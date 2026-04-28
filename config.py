@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-BOT_TOKEN = os.getenv("8693763218:AAGoc7Y2xTFZeXsaZ_mzksRkFUhOnA3Zj10")
+BOT_TOKEN = os.getenv("8359920618:AAHKLw57b3LJ7MupDtL3hWP_Msl1SwTABSQ")
 ADMIN_IDS = [int(x) for x in os.getenv('ADMIN_IDS', '').split(',') if x.strip()]
 
 BASE_DIR = Path(__file__).parent.parent
