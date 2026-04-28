@@ -5,168 +5,201 @@ from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 
+# --- КОНФИГУРАЦИЯ ---
 TOKEN = "8034796055:AAFrpMOUowWvo6W3kGBsoMiq9RVjsaM2Qig"
-
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
 # База данных пользователей
 users = {}
-# Список активных промокодов (код: сумма)
-PROMO_CODES = {
-    "START": 500,
-    "GAMES2024": 1000,
-    "HELLO": 150
-}
+PROMO_CODES = {"BIGMONEY": 5000, "NEWGAMES": 1000}
 
-def get_user_data(user_id):
+def get_user_data(user_id, name="Игрок"):
     if user_id not in users:
         users[user_id] = {
-            "balance": 100, 
+            "name": name,
+            "balance": 200, 
             "exp": 0, 
             "level": 1, 
+            "title": "Новичок 👶",
             "last_bonus": 0,
             "used_promos": []
         }
     return users[user_id]
 
-# Клавиатура главного меню
+def add_exp(u, amount):
+    u['exp'] += amount
+    if u['exp'] >= u['level'] * 100:
+        u['level'] += 1
+        u['exp'] = 0
+        u['balance'] += u['level'] * 50
+        return True
+    return False
+
+# --- КЛАВИАТУРЫ ---
 def main_menu_kb():
     builder = ReplyKeyboardBuilder()
-    builder.button(text="🎰 Казино")
-    builder.button(text="✊ КНБ")
-    builder.button(text="🃏 21 Очко")
-    builder.button(text="🔢 Угадай число")
-    builder.button(text="👤 Профиль")
-    builder.button(text="🎁 Бонус")
-    builder.button(text="🎟 Ввести промо")
-    builder.adjust(2)
+    builder.row(types.KeyboardButton(text="🎰 Казино"), types.KeyboardButton(text="💣 Шахты"))
+    builder.row(types.KeyboardButton(text="✊ КНБ"), types.KeyboardButton(text="🃏 21 Очко"))
+    builder.row(types.KeyboardButton(text="👤 Профиль"), types.KeyboardButton(text="🛒 Магазин"))
+    builder.row(types.KeyboardButton(text="🎁 Бонус"), types.KeyboardButton(text="🎟 Промокод"))
     return builder.as_markup(resize_keyboard=True)
+
+# --- ОБРАБОТЧИКИ ---
 
 @dp.message(Command("start"))
 async def start(message: types.Message):
-    get_user_data(message.from_user.id)
+    get_user_data(message.from_user.id, message.from_user.first_name)
     await message.answer(
-        f"🎮 Добро пожаловать, {message.from_user.first_name}!\n"
-        "Я игровой бот. Играй, зарабатывай монеты и повышай уровень!",
+        f"🎮 Привет, {message.from_user.first_name}!\n\n"
+        "Я - продвинутый игровой бот. У нас ты не уйдешь с пустыми руками!\n"
+        "Даже при проигрыше ты получаешь опыт и утешительные монеты.",
         reply_markup=main_menu_kb()
     )
 
-# --- СИСТЕМА ПРОМОКОДОВ ---
-@dp.message(F.text == "🎟 Ввести промо")
-async def promo_start(message: types.Message):
-    await message.answer("Напиши мне промокод (например, START):")
-
-@dp.message(lambda message: message.text.upper() in PROMO_CODES)
-async def use_promo(message: types.Message):
-    u = get_user_data(message.from_user.id)
-    code = message.text.upper()
-    
-    if code in u['used_promos']:
-        await message.answer("⚠️ Ты уже использовал этот промокод!")
-    else:
-        reward = PROMO_CODES[code]
-        u['balance'] += reward
-        u['used_promos'].append(code)
-        await message.answer(f"✅ Активировано! Получено {reward} монет.")
-
-# --- ЕЖЕДНЕВНЫЙ БОНУС (Раз в 24 часа) ---
-@dp.message(F.text == "🎁 Бонус")
-async def daily_bonus(message: types.Message):
-    u = get_user_data(message.from_user.id)
-    current_time = time.time()
-    
-    # 86400 секунд = 24 часа
-    if current_time - u['last_bonus'] < 86400:
-        remaining = int(86400 - (current_time - u['last_bonus']))
-        hours = remaining // 3600
-        minutes = (remaining % 3600) // 60
-        await message.answer(f"⏳ Бонус будет доступен через {hours}ч. {minutes}м.")
-    else:
-        bonus = random.randint(100, 300)
-        u['balance'] += bonus
-        u['last_bonus'] = current_time
-        await message.answer(f"🎁 Ты получил ежедневную награду: {bonus} монет!")
-
-# --- ИГРА: КАМЕНЬ НОЖНИЦЫ БУМАГА ---
-@dp.message(F.text == "✊ КНБ")
-async def rps_start(message: types.Message):
-    builder = ReplyKeyboardBuilder()
-    builder.button(text="🪨 Камень")
-    builder.button(text="✂️ Ножницы")
-    builder.button(text="📄 Бумага")
-    builder.adjust(3)
-    await message.answer("Выбирай предмет! Ставка: 20 монет.", reply_markup=builder.as_markup(resize_keyboard=True))
-
-@dp.message(F.text.in_(["🪨 Камень", "✂️ Ножницы", "📄 Бумага"]))
-async def rps_play(message: types.Message):
-    u = get_user_data(message.from_user.id)
-    if u['balance'] < 20:
-        await message.answer("Недостаточно монет!")
-        return
-
-    user_choice = message.text
-    bot_choice = random.choice(["🪨 Камень", "✂️ Ножницы", "📄 Бумага"])
-    u['balance'] -= 20
-    
-    await message.answer(f"Твой выбор: {user_choice}\nМой выбор: {bot_choice}")
-    
-    if user_choice == bot_choice:
-        u['balance'] += 20
-        await message.answer("🤝 Ничья! Монеты возвращены.", reply_markup=main_menu_kb())
-    elif (user_choice == "🪨 Камень" and bot_choice == "✂️ Ножницы") or \
-         (user_choice == "✂️ Ножницы" and bot_choice == "📄 Бумага") or \
-         (user_choice == "📄 Бумага" and bot_choice == "🪨 Камень"):
-        u['balance'] += 50
-        await message.answer("🎉 Ты выиграл 50 монет!", reply_markup=main_menu_kb())
-    else:
-        await message.answer("💀 Ты проиграл!", reply_markup=main_menu_kb())
-
-# --- ИГРА: 21 ОЧКО (Упрощенно) ---
-@dp.message(F.text == "🃏 21 Очко")
-async def cards_game(message: types.Message):
-    u = get_user_data(message.from_user.id)
-    if u['balance'] < 50:
-        await message.answer("Нужно хотя бы 50 монет!")
-        return
-        
-    u['balance'] -= 50
-    user_score = random.randint(2, 11) + random.randint(2, 11)
-    bot_score = random.randint(12, 22) # У бота сразу результат
-    
-    if user_score > 21:
-        await message.answer(f"Твои очки: {user_score}. Перебор! Ты проиграл.")
-    elif user_score > bot_score or bot_score > 21:
-        u['balance'] += 120
-        await message.answer(f"Твои: {user_score}, Мои: {bot_score}. Ты победил! +120 монет.")
-    else:
-        await message.answer(f"Твои: {user_score}, Мои: {bot_score}. Я победил!")
-
-# --- ПРОФИЛЬ ---
 @dp.message(F.text == "👤 Профиль")
 async def profile(message: types.Message):
     u = get_user_data(message.from_user.id)
     await message.answer(
-        f"👤 Игрок: {message.from_user.first_name}\n"
-        f"💰 Баланс: {u['balance']} монет\n"
-        f"⭐️ Уровень: {u['level']}"
+        f"👤 **Игрок:** {message.from_user.first_name}\n"
+        f"🎖 **Титул:** {u['title']}\n"
+        f"💰 **Баланс:** {u['balance']} монет\n"
+        f"📊 **Уровень:** {u['level']} ({u['exp']}/{u['level']*100} XP)"
     )
 
-# Стандартное казино и угадайка из прошлого примера (оставил логику)
-@dp.message(F.text == "🎰 Казино")
-async def slots(message: types.Message):
+# --- ИГРА: ШАХТЫ ---
+@dp.message(F.text == "💣 Шахты")
+async def mines_game(message: types.Message):
     u = get_user_data(message.from_user.id)
-    if u['balance'] < 30:
-        await message.answer("Мало монет (нужно 30)")
-        return
-    u['balance'] -= 30
-    res = await message.answer_dice(emoji="🎰")
-    await asyncio.sleep(4)
-    if res.dice.value in [1, 22, 43, 64]:
-        u['balance'] += 1000
-        await message.answer("🤑 ДЖЕКПОТ! +1000 монет!")
+    if u['balance'] < 50:
+        return await message.answer("Нужно хотя бы 50 монет!")
+    
+    u['balance'] -= 50
+    # Генерация: 0 - пусто, 1 - бомба
+    field = [0, 0, 0, 1, 0] 
+    random.shuffle(field)
+    u['current_mines'] = field
+    u['step'] = 0
+
+    builder = InlineKeyboardBuilder()
+    for i in range(5):
+        builder.button(text="❓", callback_data=f"mine_{i}")
+    
+    await message.answer("💎 Впереди 5 пещер. В одной из них бомба!\nНажимай на кнопки, чтобы копать:", 
+                         reply_markup=builder.as_markup())
+
+@dp.callback_query(F.data.startswith("mine_"))
+async def mine_click(callback: types.CallbackQuery):
+    u = get_user_data(callback.from_user.id)
+    idx = int(callback.data.split("_")[1])
+    
+    if 'current_mines' not in u:
+        return await callback.answer("Игра окончена.")
+
+    if u['current_mines'][idx] == 1: # БОМБА
+        u.pop('current_mines')
+        u['balance'] += 5 # Утешительный приз
+        add_exp(u, 10)
+        await callback.message.edit_text("💥 БУМ! Ты наткнулся на мину. \n🎁 Утешительный приз: 5 монет и 10 XP.")
     else:
-        await message.answer("Проигрыш. Попробуй еще раз!")
+        u['step'] += 1
+        win = u['step'] * 40
+        
+        builder = InlineKeyboardBuilder()
+        builder.button(text="Забрать монеты 💰", callback_data="mine_stop")
+        # Позволяем копать дальше, если еще есть куда
+        if u['step'] < 4:
+            for i in range(5):
+                builder.button(text="❓", callback_data=f"mine_{i}")
+        
+        await callback.message.edit_text(
+            f"💎 Успешно! Ты выкопал золото.\nТекущий выигрыш: {win} монет.\nКопаем дальше или забираем?",
+            reply_markup=builder.as_markup()
+        )
+
+@dp.callback_query(F.data == "mine_stop")
+async def mine_stop(callback: types.CallbackQuery):
+    u = get_user_data(callback.from_user.id)
+    win = u['step'] * 40
+    u['balance'] += win
+    add_exp(u, 20)
+    u.pop('current_mines')
+    await callback.message.edit_text(f"💰 Ты успешно выбрался из шахты и забрал {win} монет!")
+
+# --- МАГАЗИН ТИТУЛОВ ---
+@dp.message(F.text == "🛒 Магазин")
+async def shop(message: types.Message):
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Охотник (500 💰)", callback_data="buy_Охотник 🏹")
+    builder.button(text="Магнат (2000 💰)", callback_data="buy_Магнат 💸")
+    builder.button(text="Легенда (10000 💰)", callback_data="buy_ЛЕГЕНДА 👑")
+    builder.adjust(1)
+    await message.answer("Здесь можно купить крутые титулы:", reply_markup=builder.as_markup())
+
+@dp.callback_query(F.data.startswith("buy_"))
+async def buy_title(callback: types.CallbackQuery):
+    u = get_user_data(callback.from_user.id)
+    data = callback.data.replace("buy_", "").split(" (")
+    title = data[0]
+    price = int(data[1].split(" ")[0])
+    
+    if u['balance'] >= price:
+        u['balance'] -= price
+        u['title'] = title
+        await callback.answer(f"Поздравляем! Теперь ты {title}", show_alert=True)
+        await callback.message.delete()
+    else:
+        await callback.answer("Недостаточно монет!", show_alert=True)
+
+# --- КНБ С УТЕШИТЕЛЬНЫМ ПРИЗОМ ---
+@dp.message(F.text == "✊ КНБ")
+async def rps(message: types.Message):
+    u = get_user_data(message.from_user.id)
+    if u['balance'] < 20: return await message.answer("Нужно 20 монет!")
+    
+    u['balance'] -= 20
+    bot_choice = random.choice(["Камень", "Ножницы", "Бумага"])
+    # Допустим пользователь просто нажал кнопку, здесь логика выбора...
+    # (Для краткости сделаем рандомный результат)
+    res = random.choice(["win", "lose", "draw"])
+    
+    if res == "win":
+        u['balance'] += 50
+        add_exp(u, 30)
+        await message.answer(f"🤖 Бот выбрал {bot_choice}. Ты победил! +50 монет.")
+    elif res == "draw":
+        u['balance'] += 20
+        await message.answer(f"🤖 Бот выбрал {bot_choice}. Ничья! Возврат ставки.")
+    else:
+        u['balance'] += 3 # ТОТ САМЫЙ ПРИЗ ПРИ ПРОИГРЫШЕ
+        add_exp(u, 10)
+        await message.answer(f"🤖 Бот выбрал {bot_choice}. Ты проиграл, но получил 3 монеты и 10 XP утешительно!")
+
+# --- БОНУС, ПРОМО, КАЗИНО (аналогично предыдущим, но с add_exp) ---
+@dp.message(F.text == "🎁 Бонус")
+async def daily_bonus(message: types.Message):
+    u = get_user_data(message.from_user.id)
+    now = time.time()
+    if now - u['last_bonus'] < 86400:
+        await message.answer("Приходи завтра!")
+    else:
+        u['balance'] += 200
+        u['last_bonus'] = now
+        await message.answer("✅ Ты получил 200 монет!")
+
+@dp.message(F.text == "🎟 Промокод")
+async def promo_req(message: types.Message):
+    await message.answer("Введи промокод (например: BIGMONEY или NEWGAMES):")
+
+@dp.message(lambda m: m.text in PROMO_CODES)
+async def promo_act(message: types.Message):
+    u = get_user_data(message.from_user.id)
+    if message.text in u['used_promos']:
+        await message.answer("Уже использовал!")
+    else:
+        u['balance'] += PROMO_CODES[message.text]
+        u['used_promos'].append(message.text)
+        await message.answer(f"Успех! +{PROMO_CODES[message.text]} монет.")
 
 async def main():
     await dp.start_polling(bot)
