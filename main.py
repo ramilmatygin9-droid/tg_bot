@@ -6,7 +6,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from aiogram.client.default import DefaultBotProperties
 
 # --- НАСТРОЙКИ ---
-GAME_TOKEN = "8359920618:AAHKLw57b3LJ7MupDtL3hWP_Msl1SwTABSQ" 
+GAME_TOKEN = "8359920618:AAE4fi9nt5rZCihjYNuhVZxzEuvwPKjiDbk" 
 
 bot = Bot(token=GAME_TOKEN, default=DefaultBotProperties(parse_mode="Markdown"))
 dp = Dispatcher()
