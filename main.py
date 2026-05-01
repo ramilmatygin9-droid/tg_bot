@@ -150,6 +150,16 @@ slot_machine = SlotMachine()
 
 
 # --- ОБРАБОТЧИКИ КОМАНД ---
+@dp.message(Command("start"))
+async def cmd_start(message: types.Message):
+    user = get_user(message.from_user.id)
+    text = (f"🎮 **ДОБРО ПОЖАЛОВАТЬ В GLITCH WIN!**\n\n"
+            f"💰 **Баланс:** {user['balance']} m¢\n"
+            f"💸 **Ставка:** {user['bet']} m¢\n\n"
+            f"👇 *Выбери игру и начинай выигрывать!*")
+    await message.answer(text, reply_markup=main_kb())
+
+
 @dp.callback_query(F.data == "show_balance")
 async def show_balance(call: types.CallbackQuery):
     user = get_user(call.from_user.id)
@@ -278,7 +288,7 @@ async def wheel_game(call: types.CallbackQuery):
 
     update_balance(call.from_user.id, -bet, "wheel")
 
-    await call.message.answer_dice(emoji="🎰")
+    msg = await call.message.answer_dice(emoji="🎰")
     await asyncio.sleep(3)
 
     colors = ["🔴", "⚫", "🟢"]
@@ -508,14 +518,12 @@ async def handle_web_app_data(message: types.Message):
         print(f"📱 WebApp от {message.from_user.id}: {action}")
 
         if action == 'get_balance':
-            # Отправляем баланс на сайт
             await message.answer(json.dumps({
                 'action': 'set_balance',
                 'balance': user['balance']
             }))
 
         elif action == 'get_stats':
-            # Отправляем статистику на сайт
             win_rate = (user["total_wins"] / user["total_games"] * 100) if user["total_games"] > 0 else 0
             await message.answer(json.dumps({
                 'action': 'stats_data',
@@ -526,7 +534,6 @@ async def handle_web_app_data(message: types.Message):
             }))
 
         elif action == 'game_result':
-            # Получаем результат игры с сайта
             win_amount = data.get('win_amount', 0)
             bet = data.get('bet', 100)
             game = data.get('game', 'web')
@@ -541,9 +548,6 @@ async def handle_web_app_data(message: types.Message):
                 user['total_losses'] += 1
 
             print(f"🎮 Web игра: {game}, ставка {bet}, выигрыш {win_amount}, новый баланс {user['balance']}")
-
-            # Не отправляем ответное сообщение, чтобы не засорять чат
-            # Баланс уже обновлен в БД
 
     except json.JSONDecodeError as e:
         print(f"JSON Error: {e}")
@@ -615,6 +619,4 @@ def get_mines_board_kb(user_id):
         for c in range(5):
             idx = r * 5 + c
             if idx in s['opened']:
-                char = "💥" if s['board'][idx] == 1 else "💎"
-            else:
-                char = "❓
+                char = "💥" if s['board'][idx
