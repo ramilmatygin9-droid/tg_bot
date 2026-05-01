@@ -36,11 +36,12 @@ def update_balance(user_id, amount, game_result="unknown"):
     user = get_user(user_id)
     old_balance = user["balance"]
     user["balance"] += amount
-    user["total_games"] += 1
-    if amount > 0:
-        user["total_wins"] += 1
-    elif amount < 0:
-        user["total_losses"] += 1
+    if game_result not in ["wheel", "rps", "slots", "mines"]:
+        user["total_games"] += 1
+        if amount > 0:
+            user["total_wins"] += 1
+        elif amount < 0:
+            user["total_losses"] += 1
     print(f"💰 Пользователь {user_id}: {old_balance} → {user['balance']} ({'+' if amount > 0 else ''}{amount})")
     return user["balance"]
 
@@ -65,7 +66,8 @@ def main_kb():
         ],
         [
             InlineKeyboardButton(text="🎮 Режимы", callback_data="menu_modes"),
-            InlineKeyboardButton(text="🎰 КЕЙСЫ", web_app=WebAppInfo(url="https://ramilmatygin9-droid.github.io/GLITCH-WIN/"))
+            InlineKeyboardButton(text="🎰 КЕЙСЫ", web_app=WebAppInfo(url="https://ramilmatygin9-droid.github.io/GLITCH-WIN/")),
+            InlineKeyboardButton(text="🎡 РУЛЕТКА", web_app=WebAppInfo(url="https://ramilmatygin9-droid.github.io/GLITCH-WIN/roulette.html"))
         ],
         [
             InlineKeyboardButton(text="💰 Баланс", callback_data="show_balance"),
@@ -147,7 +149,7 @@ class SlotMachine:
 slot_machine = SlotMachine()
 
 
-# --- ОБРАБОТЧИКИ ---
+# --- ОБРАБОТЧИКИ КОМАНД ---
 @dp.callback_query(F.data == "show_balance")
 async def show_balance(call: types.CallbackQuery):
     user = get_user(call.from_user.id)
@@ -505,26 +507,29 @@ async def handle_web_app_data(message: types.Message):
         action = data.get('action')
         print(f"📱 WebApp от {message.from_user.id}: {action}")
 
-        if action == 'get_web_balance':
+        if action == 'get_balance':
             # Отправляем баланс на сайт
             await message.answer(json.dumps({
                 'action': 'set_balance',
                 'balance': user['balance']
             }))
 
-        elif action == 'web_balance':
-            # Получаем баланс с сайта
-            new_balance = data.get('balance')
-            if new_balance is not None and isinstance(new_balance, (int, float)):
-                old_balance = user['balance']
-                user['balance'] = int(new_balance)
-                print(f"🔄 Синхронизация: {old_balance} → {user['balance']}")
-                await message.answer(f"💰 Баланс синхронизирован: {user['balance']} m¢")
+        elif action == 'get_stats':
+            # Отправляем статистику на сайт
+            win_rate = (user["total_wins"] / user["total_games"] * 100) if user["total_games"] > 0 else 0
+            await message.answer(json.dumps({
+                'action': 'stats_data',
+                'balance': user['balance'],
+                'total_games': user['total_games'],
+                'total_wins': user['total_wins'],
+                'win_rate': round(win_rate, 1)
+            }))
 
         elif action == 'game_result':
-            # Результат игры с сайта
+            # Получаем результат игры с сайта
             win_amount = data.get('win_amount', 0)
             bet = data.get('bet', 100)
+            game = data.get('game', 'web')
 
             old_balance = user['balance']
             user['balance'] = user['balance'] - bet + win_amount
@@ -535,24 +540,10 @@ async def handle_web_app_data(message: types.Message):
             else:
                 user['total_losses'] += 1
 
-            text = (f"🎮 **WEB КЕЙСЫ**\n{DOTS}\n"
-                    f"💰 Ставка: {bet} m¢\n"
-                    f"🎁 Выигрыш: {win_amount} m¢\n"
-                    f"{'✅ ПОБЕДА!' if win_amount > bet else '❌ ПРОИГРЫШ'}\n"
-                    f"💰 Баланс: {user['balance']} m¢")
+            print(f"🎮 Web игра: {game}, ставка {bet}, выигрыш {win_amount}, новый баланс {user['balance']}")
 
-            await message.answer(text, reply_markup=main_kb())
-
-        elif action == 'init_stats':
-            # Отправляем статистику на сайт
-            win_rate = (user["total_wins"] / user["total_games"] * 100) if user["total_games"] > 0 else 0
-            await message.answer(json.dumps({
-                'action': 'stats_data',
-                'balance': user['balance'],
-                'total_games': user['total_games'],
-                'total_wins': user['total_wins'],
-                'win_rate': round(win_rate, 1)
-            }))
+            # Не отправляем ответное сообщение, чтобы не засорять чат
+            # Баланс уже обновлен в БД
 
     except json.JSONDecodeError as e:
         print(f"JSON Error: {e}")
@@ -620,4 +611,10 @@ def get_mines_board_kb(user_id):
 
     kb = []
     for r in range(5):
-        row
+        row = []
+        for c in range(5):
+            idx = r * 5 + c
+            if idx in s['opened']:
+                char = "💥" if s['board'][idx] == 1 else "💎"
+            else:
+                char = "❓
