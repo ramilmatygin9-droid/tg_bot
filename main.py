@@ -288,7 +288,7 @@ async def wheel_game(call: types.CallbackQuery):
 
     update_balance(call.from_user.id, -bet, "wheel")
 
-    msg = await call.message.answer_dice(emoji="🎰")
+    await call.message.answer_dice(emoji="🎰")
     await asyncio.sleep(3)
 
     colors = ["🔴", "⚫", "🟢"]
@@ -618,5 +618,4 @@ def get_mines_board_kb(user_id):
         row = []
         for c in range(5):
             idx = r * 5 + c
-            if idx in s['opened']:
-                char = "💥" if s['board'][idx
+            if idx
