@@ -15,6 +15,7 @@ dp = Dispatcher()
 # БАЗА ДАННЫХ ПОЛЬЗОВАТЕЛЕЙ
 users_db = {}
 game_sessions = {}
+rocket_sessions = {}  # Для игры Ракета
 DOTS = "···················"
 
 # --- ФУНКЦИИ ДЛЯ РАБОТЫ С ПОЛЬЗОВАТЕЛЯМИ ---
@@ -31,11 +32,11 @@ def get_user(user_id):
     return users_db[user_id]
 
 
-def update_balance(user_id, amount):
+def update_balance(user_id, amount, skip_stats=False):
     user = get_user(user_id)
     old_balance = user["balance"]
     user["balance"] += amount
-    if amount != 0:
+    if not skip_stats and amount != 0:
         user["total_games"] += 1
         if amount > 0:
             user["total_wins"] += 1
@@ -57,17 +58,36 @@ def main_kb():
             InlineKeyboardButton(text="🎰", callback_data="prep_slots")
         ],
         [
-            InlineKeyboardButton(text="🚀 Быстрые", callback_data="under_dev"),
-            InlineKeyboardButton(text="Режимы 💣", callback_data="menu_modes")
+            InlineKeyboardButton(text="🚀 РАКЕТА", callback_data="prep_rocket"),
+            InlineKeyboardButton(text="🎡 РУЛЕТКА", callback_data="prep_wheel"),
+            InlineKeyboardButton(text="🪨✂️📄", callback_data="prep_rps")
         ],
         [
-            InlineKeyboardButton(text="🕹 Играть в WEB", web_app=WebAppInfo(url="https://ramilmatygin9-droid.github.io/GLITCH-WIN/"))
+            InlineKeyboardButton(text="💣 МИНЫ", callback_data="menu_mines"),
+            InlineKeyboardButton(text="🎮 Режимы", callback_data="menu_modes")
+        ],
+        [
+            InlineKeyboardButton(text="🕹 WEB", web_app=WebAppInfo(url="https://ramilmatygin9-droid.github.io/GLITCH-WIN/"))
         ],
         [
             InlineKeyboardButton(text="💰 Баланс", callback_data="show_balance"),
             InlineKeyboardButton(text="📝 Ставка", callback_data="change_bet"),
             InlineKeyboardButton(text="📊 Статистика", callback_data="show_stats")
         ]
+    ])
+
+
+def rocket_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🚀 ЗАБРАТЬ 💰", callback_data="rocket_cashout")],
+        [InlineKeyboardButton(text="◀️ Назад", callback_data="to_main")]
+    ])
+
+
+def rocket_start_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🚀 ЗАПУСТИТЬ РАКЕТУ", callback_data="rocket_start")],
+        [InlineKeyboardButton(text="◀️ Назад", callback_data="to_main")]
     ])
 
 
@@ -140,14 +160,231 @@ class SlotMachine:
 slot_machine = SlotMachine()
 
 
-# --- ОБРАБОТЧИКИ ---
+# --- ИГРА РАКЕТА (CRASH GAME) ---
+def generate_multiplier():
+    """Генерирует случайный множитель от 1.01 до 10.00"""
+    # Шанс взрыва на малых множителях меньше
+    rand = random.random()
+    if rand < 0.3:  # 30% - взрыв до x2
+        return round(random.uniform(1.01, 2.00), 2)
+    elif rand < 0.55:  # 25% - взрыв до x3
+        return round(random.uniform(2.01, 3.00), 2)
+    elif rand < 0.75:  # 20% - взрыв до x5
+        return round(random.uniform(3.01, 5.00), 2)
+    elif rand < 0.9:  # 15% - взрыв до x8
+        return round(random.uniform(5.01, 8.00), 2)
+    else:  # 10% - взрыв до x10
+        return round(random.uniform(8.01, 10.00), 2)
+
+
+def get_rocket_animation(multiplier):
+    """Анимация ракеты в зависимости от множителя"""
+    if multiplier < 1.5:
+        rocket = "🚀"
+        trail = "💨"
+    elif multiplier < 2.5:
+        rocket = "🚀➡️"
+        trail = "💨💨"
+    elif multiplier < 4:
+        rocket = "🚀🚀"
+        trail = "💨💨💨"
+    elif multiplier < 6:
+        rocket = "⚡🚀⚡"
+        trail = "🔥🔥🔥"
+    elif multiplier < 8:
+        rocket = "💥🚀⚡"
+        trail = "💥💥💥"
+    else:
+        rocket = "💢🚀💢"
+        trail = "💢💢💢"
+    
+    bar_length = min(int(multiplier * 5), 50)
+    bar = "▓" * bar_length + "░" * (50 - bar_length)
+    
+    return f"""
+{rocket} {trail}
+[{bar}] x{multiplier:.2f}
+"""
+
+
+@dp.callback_query(F.data == "prep_rocket")
+async def prepare_rocket(call: types.CallbackQuery):
+    user = get_user(call.from_user.id)
+    text = f"""🚀 <b>ИГРА РАКЕТА (CRASH)</b> 🚀
+{DOTS}
+
+🎲 <b>ПРАВИЛА:</b>
+1️⃣ Сделай ставку и запусти ракету
+2️⃣ Множитель будет расти от x1.00 до x10.00
+3️⃣ Забери деньги ДО того, как ракета улетит!
+4️⃣ Чем выше множитель - тем больше выигрыш!
+
+💸 <b>Твоя ставка:</b> {user['bet']} m¢
+💰 <b>Баланс:</b> {user['balance']} m¢
+
+👇 <i>Нажми на кнопку, чтобы начать!</i>"""
+    
+    await call.message.edit_text(text, reply_markup=rocket_start_kb())
+
+
+@dp.callback_query(F.data == "rocket_start")
+async def rocket_start(call: types.CallbackQuery):
+    user = get_user(call.from_user.id)
+    bet = user['bet']
+    
+    if user["balance"] < bet:
+        await call.answer("❌ Недостаточно средств!", show_alert=True)
+        return
+    
+    # Списываем ставку
+    update_balance(call.from_user.id, -bet, skip_stats=True)
+    
+    # Создаем сессию игры
+    rocket_sessions[call.from_user.id] = {
+        'bet': bet,
+        'active': True,
+        'crashed': False,
+        'cashed_out': False,
+        'multiplier': 1.00,
+        'message_id': None,
+        'chat_id': call.message.chat.id
+    }
+    
+    # Генерируем множитель краша
+    crash_multiplier = generate_multiplier()
+    rocket_sessions[call.from_user.id]['crash_multiplier'] = crash_multiplier
+    
+    text = f"""🚀 <b>РАКЕТА ЗАПУЩЕНА!</b> 🚀
+{DOTS}
+💰 Ставка: {bet} m¢
+📈 Текущий множитель: <b>x1.00</b>
+💎 Потенциальный выигрыш: {bet} m¢
+
+{get_rocket_animation(1.00)}
+
+⏳ Множитель растёт...
+👇 Забери деньги до того, как ракета улетит!"""
+    
+    msg = await call.message.edit_text(text, reply_markup=rocket_kb())
+    rocket_sessions[call.from_user.id]['message_id'] = msg.message_id
+    
+    # Запускаем анимацию роста множителя
+    asyncio.create_task(rocket_animation(call.from_user.id, msg.chat.id, msg.message_id, crash_multiplier))
+
+
+async def rocket_animation(user_id, chat_id, message_id, crash_multiplier):
+    """Анимация роста множителя"""
+    session = rocket_sessions.get(user_id)
+    if not session:
+        return
+    
+    multiplier = 1.00
+    step = 0.03  # Шаг увеличения
+    
+    while multiplier < crash_multiplier and session.get('active', False) and not session.get('cashed_out', False):
+        multiplier = round(multiplier + step, 2)
+        session['multiplier'] = multiplier
+        
+        win_amount = int(session['bet'] * multiplier)
+        
+        text = f"""🚀 <b>РАКЕТА ЛЕТИТ!</b> 🚀
+{DOTS}
+💰 Ставка: {session['bet']} m¢
+📈 Текущий множитель: <b>x{multiplier:.2f}</b>
+💎 Потенциальный выигрыш: <b>{win_amount} m¢</b>
+
+{get_rocket_animation(multiplier)}
+
+⚠️ Забери деньги, пока не поздно!"""
+        
+        try:
+            await bot.edit_message_text(text, chat_id, message_id, reply_markup=rocket_kb())
+        except:
+            pass
+        
+        await asyncio.sleep(0.3)
+    
+    # Ракета взорвалась / улетела
+    if not session.get('cashed_out', False) and session.get('active', False):
+        session['active'] = False
+        session['crashed'] = True
+        
+        text = f"""💥 <b>РАКЕТА ВЗОРВАЛАСЬ / УЛЕТЕЛА!</b> 💥
+{DOTS}
+💰 Ставка: {session['bet']} m¢
+💥 Множитель в момент взрыва: <b>x{crash_multiplier:.2f}</b>
+{DOTS}
+❌ <b>ВЫ ПРОИГРАЛИ!</b> -{session['bet']} m¢
+💰 Баланс: {get_user(user_id)['balance']} m¢
+
+🚀 <i>Попробуй снова - в следующий раз повезёт!</i>"""
+        
+        try:
+            await bot.edit_message_text(text, chat_id, message_id, reply_markup=main_kb())
+        except:
+            pass
+        
+        # Обновляем статистику
+        user = get_user(user_id)
+        user['total_games'] += 1
+        user['total_losses'] += 1
+        
+        # Удаляем сессию
+        del rocket_sessions[user_id]
+
+
+@dp.callback_query(F.data == "rocket_cashout")
+async def rocket_cashout(call: types.CallbackQuery):
+    session = rocket_sessions.get(call.from_user.id)
+    
+    if not session or not session.get('active', False) or session.get('cashed_out', False):
+        await call.answer("Игра не активна!", show_alert=True)
+        return
+    
+    # Забираем выигрыш
+    session['cashed_out'] = True
+    session['active'] = False
+    
+    multiplier = session['multiplier']
+    bet = session['bet']
+    win_amount = int(bet * multiplier)
+    
+    # Начисляем выигрыш
+    update_balance(call.from_user.id, win_amount)
+    
+    user = get_user(call.from_user.id)
+    
+    text = f"""🎉 <b>ВЫ ЗАБРАЛИ ВЫИГРЫШ!</b> 🎉
+{DOTS}
+🚀 Ставка: {bet} m¢
+📈 Множитель: <b>x{multiplier:.2f}</b>
+💰 Выигрыш: <b>+{win_amount} m¢</b>
+{DOTS}
+💎 Новый баланс: <b>{user['balance']} m¢</b>
+
+✅ <i>Отличный забег! Сыграй ещё!</i>"""
+    
+    await call.message.edit_text(text, reply_markup=main_kb())
+    
+    # Обновляем статистику
+    user['total_games'] += 1
+    user['total_wins'] += 1
+    
+    # Удаляем сессию
+    del rocket_sessions[call.from_user.id]
+
+
+# --- ОСТАЛЬНЫЕ ОБРАБОТЧИКИ ---
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     user = get_user(message.from_user.id)
-    text = f"""🎮 <b>ДАВАЙ НАЧНЕМ ИГРАТЬ!</b> 🎮
+    text = f"""🎮 <b>ДОБРО ПОЖАЛОВАТЬ В GLITCH WIN!</b> 🎮
 
 💰 <b>Баланс:</b> {user['balance']} m¢
 💸 <b>Ставка:</b> {user['bet']} m¢
+
+🚀 <b>НОВАЯ ИГРА - РАКЕТА!</b>
+Играй как в казино: запусти ракету и забери деньги до взрыва!
 
 👇 <i>Выбери игру и начинай!</i>"""
     await message.answer(text, reply_markup=main_kb())
@@ -189,10 +426,12 @@ async def show_modes(call: types.CallbackQuery):
 @dp.callback_query(F.data == "to_main")
 async def back_to_main(call: types.CallbackQuery):
     user = get_user(call.from_user.id)
-    text = f"""🎮 <b>ДАВАЙ НАЧНЕМ ИГРАТЬ!</b> 🎮
+    text = f"""🎮 <b>ДОБРО ПОЖАЛОВАТЬ В GLITCH WIN!</b> 🎮
 
 💰 <b>Баланс:</b> {user['balance']} m¢
 💸 <b>Ставка:</b> {user['bet']} m¢
+
+🚀 <b>НОВАЯ ИГРА - РАКЕТА!</b>
 
 👇 <i>Выбери игру и начинай!</i>"""
     await call.message.edit_text(text, reply_markup=main_kb())
@@ -214,7 +453,7 @@ async def dev(call: types.CallbackQuery):
     await call.answer("🚧 В разработке", show_alert=True)
 
 
-# --- ПОДГОТОВКА ИГР ---
+# --- ПОДГОТОВКА ДРУГИХ ИГР ---
 @dp.callback_query(F.data.startswith("prep_"))
 async def prepare_games(call: types.CallbackQuery):
     game = call.data.split("_")[1]
@@ -254,7 +493,7 @@ async def prepare_games(call: types.CallbackQuery):
                              [InlineKeyboardButton(text="➕ Больше 3 - x1.94", callback_data="play_dice_high"),
                               InlineKeyboardButton(text="➖ Меньше 3 - x2.9", callback_data="play_dice_low")]]},
         "slots": {"text": f"🎰 <b>Слоты</b>\n{DOTS}\n💸 Ставка: {bet} m¢\n\nНажми на кнопку и крути барабаны!",
-                  "buttons": [[InlineKeyboardButton(text="🎰 КРУТИТЬ", callback_data="play_slots")]]},
+                  "buttons": []},
         "wheel": {"text": f"🎡 <b>Рулетка</b>\n{DOTS}\n💸 Ставка: {bet} m¢\n\nВыбери цвет и удвой ставку!",
                   "buttons": []},
         "rps": {"text": f"🪨✂️📄 <b>Камень-ножницы-бумага</b>\n{DOTS}\n💸 Ставка: {bet} m¢\n\nСыграй с ботом!",
@@ -275,7 +514,7 @@ async def prepare_games(call: types.CallbackQuery):
         await call.answer("🚧 В разработке")
 
 
-# --- ИГРА СЛОТЫ ---
+# --- СЛОТЫ ---
 @dp.callback_query(F.data == "play_slots")
 async def slots_game(call: types.CallbackQuery):
     user = get_user(call.from_user.id)
@@ -285,8 +524,7 @@ async def slots_game(call: types.CallbackQuery):
         await call.answer("❌ Недостаточно средств!", show_alert=True)
         return
 
-    update_balance(call.from_user.id, -bet)
-
+    update_balance(call.from_user.id, -bet, skip_stats=True)
     result = slot_machine.spin(bet)
 
     if result["win"]:
@@ -324,7 +562,7 @@ async def wheel_game(call: types.CallbackQuery):
         await call.answer("❌ Недостаточно средств!", show_alert=True)
         return
 
-    update_balance(call.from_user.id, -bet)
+    update_balance(call.from_user.id, -bet, skip_stats=True)
 
     await call.message.answer_dice(emoji="🎰")
     await asyncio.sleep(3)
@@ -380,7 +618,7 @@ async def rps_game(call: types.CallbackQuery):
         await call.answer("❌ Недостаточно средств!", show_alert=True)
         return
 
-    update_balance(call.from_user.id, -bet)
+    update_balance(call.from_user.id, -bet, skip_stats=True)
 
     choices = {"rock": "🪨 Камень", "scissors": "✂️ Ножницы", "paper": "📄 Бумага"}
     bot_choice = random.choice(["rock", "scissors", "paper"])
@@ -433,7 +671,7 @@ async def play_engine(call: types.CallbackQuery):
     selection = data[2] if len(data) > 2 else "spin"
 
     bet = user["bet"]
-    update_balance(call.from_user.id, -bet)
+    update_balance(call.from_user.id, -bet, skip_stats=True)
 
     emojis = {"bask": "🏀", "foot": "⚽", "dart": "🎯", "bowl": "🎳", "dice": "🎲"}
     dice_msg = await call.message.answer_dice(emoji=emojis.get(game_code, "🎲"))
@@ -479,215 +717,4 @@ async def play_engine(call: types.CallbackQuery):
             multiplier = 5.8 if win else 0
         else:
             win = 1 <= val <= 5
-            multiplier = 5.8 if win else 0
-    elif game_code == "dice":
-        if selection.isdigit():
-            win = val == int(selection)
-            multiplier = 5.8 if win else 0
-        elif selection == "even":
-            win = val % 2 == 0
-            multiplier = 1.94 if win else 0
-        elif selection == "odd":
-            win = val % 2 == 1
-            multiplier = 1.94 if win else 0
-        elif selection == "equal3":
-            win = val == 3
-            multiplier = 5.8 if win else 0
-        elif selection == "high":
-            win = val > 3
-            multiplier = 1.94 if win else 0
-        elif selection == "low":
-            win = val < 3
-            multiplier = 2.9 if win else 0
-
-    if win:
-        win_amount = int(bet * multiplier)
-        update_balance(call.from_user.id, win_amount)
-        header = "🥳 ПОБЕДА! ✅"
-        outcome_text = f"💰 Выигрыш: x{multiplier} = +{win_amount} m¢"
-    else:
-        header = "😭 ПРОИГРЫШ ❌"
-        outcome_text = f"💸 Потеряно: -{bet} m¢"
-
-    res_text = f"""{header}
-{DOTS}
-💸 Ставка: {bet} m¢
-🎲 Выбрано: {selection}
-🎯 Выпало: {val}
-{DOTS}
-{outcome_text}
-💰 Баланс: {user['balance']} m¢"""
-
-    await call.message.answer(res_text, reply_markup=main_kb())
-    await call.message.delete()
-
-
-# --- МИНЫ ---
-def mines_start_kb():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💰 Удвоить ставку", callback_data="mines_double")],
-        [InlineKeyboardButton(text="1", callback_data="setmines_1"), InlineKeyboardButton(text="2", callback_data="setmines_2"), InlineKeyboardButton(text="3", callback_data="setmines_3")],
-        [InlineKeyboardButton(text="4", callback_data="setmines_4"), InlineKeyboardButton(text="5", callback_data="setmines_5"), InlineKeyboardButton(text="6", callback_data="setmines_6")],
-        [InlineKeyboardButton(text="◀️ Назад", callback_data="menu_modes")]
-    ])
-
-
-@dp.callback_query(F.data == "menu_mines")
-async def mines_menu(call: types.CallbackQuery):
-    user = get_user(call.from_user.id)
-    text = f"💣 <b>МИНЫ</b>\n{DOTS}\n💸 Ставка: {user['bet']} m¢\n\nВыбери количество мин:"
-    await call.message.edit_text(text, reply_markup=mines_start_kb())
-
-
-@dp.callback_query(F.data == "mines_double")
-async def mines_double(call: types.CallbackQuery):
-    user = get_user(call.from_user.id)
-    user['bet'] *= 2
-    await call.answer(f"💸 Ставка удвоена! Теперь: {user['bet']} m¢", show_alert=True)
-    await mines_menu(call)
-
-
-@dp.callback_query(F.data.startswith("setmines_"))
-async def start_mines_game(call: types.CallbackQuery):
-    user = get_user(call.from_user.id)
-    m_count = int(call.data.split("_")[1])
-    user_id = call.from_user.id
-
-    if user["balance"] < user["bet"]:
-        await call.answer("❌ Недостаточно средств!", show_alert=True)
-        return
-
-    update_balance(user_id, -user["bet"])
-
-    board = [0] * 25
-    for idx in random.sample(range(25), m_count):
-        board[idx] = 1
-
-    game_sessions[user_id] = {
-        'board': board,
-        'bet': user['bet'],
-        'mines': m_count,
-        'opened': [],
-        'game_over': False
-    }
-
-    await call.message.edit_text(f"💎 <b>МИНЫ</b>\n{DOTS}\n💣 Мин: {m_count}\n💸 Ставка: {user['bet']} m¢\n\nОткрывай ячейки!",
-                                 reply_markup=get_mines_board_kb(user_id))
-
-
-def get_mines_board_kb(user_id):
-    s = game_sessions.get(user_id)
-    if not s:
-        return mines_start_kb()
-
-    kb = []
-    for r in range(5):
-        row = []
-        for c in range(5):
-            idx = r * 5 + c
-            if idx in s['opened']:
-                char = "💥" if s['board'][idx] == 1 else "💎"
-            else:
-                char = "❓"
-            row.append(InlineKeyboardButton(text=char, callback_data=f"mopen_{idx}"))
-        kb.append(row)
-
-    if not s['game_over']:
-        opened_safe = len([x for x in s['opened'] if s['board'][x] == 0])
-        total_safe = 25 - s['mines']
-        multiplier = 1 + (opened_safe / total_safe) * 2 if opened_safe > 0 else 1
-        kb.append([InlineKeyboardButton(text=f"💰 Забрать x{multiplier:.2f}", callback_data="m_cashout")])
-        kb.append([InlineKeyboardButton(text="◀️ Выход", callback_data="to_main")])
-    else:
-        kb.append([InlineKeyboardButton(text=f"🔄 Повторить · {s['bet']} m¢", callback_data=f"setmines_{s['mines']}")])
-        kb.append([InlineKeyboardButton(text="◀️ Назад", callback_data="menu_modes")])
-
-    return InlineKeyboardMarkup(inline_keyboard=kb)
-
-
-@dp.callback_query(F.data.startswith("mopen_"))
-async def mines_step(call: types.CallbackQuery):
-    user = get_user(call.from_user.id)
-    idx = int(call.data.split("_")[1])
-    s = game_sessions.get(call.from_user.id)
-
-    if not s or s['game_over'] or idx in s['opened']:
-        return
-
-    s['opened'].append(idx)
-
-    if s['board'][idx] == 1:
-        s['game_over'] = True
-        text = f"💥 <b>МИНЫ · ПРОИГРЫШ!</b>\n{DOTS}\n💣 Мин: {s['mines']}\n💸 Ставка: {s['bet']} m¢\n💰 Баланс: {user['balance']} m¢"
-    else:
-        opened_safe = len([x for x in s['opened'] if s['board'][x] == 0])
-        total_safe = 25 - s['mines']
-        multiplier = 1 + (opened_safe / total_safe) * 2
-        text = f"💎 <b>МИНЫ · ИГРА ИДЁТ</b>\n{DOTS}\n💣 Мин: {s['mines']}\n💸 Ставка: {s['bet']} m¢\n💰 Множитель: x{multiplier:.2f}"
-
-    await call.message.edit_text(text, reply_markup=get_mines_board_kb(call.from_user.id))
-
-
-@dp.callback_query(F.data == "m_cashout")
-async def mines_cashout(call: types.CallbackQuery):
-    user = get_user(call.from_user.id)
-    user_id = call.from_user.id
-    s = game_sessions.get(user_id)
-
-    if not s or s['game_over']:
-        return
-
-    opened_safe = len([x for x in s['opened'] if s['board'][x] == 0])
-    total_safe = 25 - s['mines']
-    multiplier = 1 + (opened_safe / total_safe) * 2 if opened_safe > 0 else 1
-    win_amount = int(s['bet'] * multiplier)
-    update_balance(user_id, win_amount)
-
-    text = f"""💰 <b>ТЫ ЗАБРАЛ ВЫИГРЫШ!</b>
-{DOTS}
-💸 Ставка: {s['bet']} m¢
-🎲 Множитель: x{multiplier:.2f}
-✅ Выигрыш: +{win_amount} m¢
-💰 Новый баланс: {user['balance']} m¢"""
-
-    await call.message.edit_text(text, reply_markup=main_kb())
-    del game_sessions[user_id]
-
-
-# --- ВЕБАПП СИНХРОНИЗАЦИЯ ---
-@dp.message(F.web_app_data)
-async def handle_web_app_data(message: types.Message):
-    user = get_user(message.from_user.id)
-    try:
-        data = json.loads(message.web_app_data.data)
-        action = data.get('action')
-        
-        if action == 'get_balance':
-            await message.answer(json.dumps({
-                'action': 'set_balance',
-                'balance': user['balance']
-            }))
-        elif action == 'game_result':
-            win_amount = data.get('win_amount', 0)
-            bet = data.get('bet', 100)
-            old_balance = user['balance']
-            user['balance'] = user['balance'] - bet + win_amount
-            user['total_games'] += 1
-            if win_amount > bet:
-                user['total_wins'] += 1
-            else:
-                user['total_losses'] += 1
-    except:
-        pass
-
-
-# --- ЗАПУСК ---
-async def main():
-    print("🤖 ИГРОВОЙ БОТ ЗАПУЩЕН!")
-    print("🎮 Доступны игры: Баскетбол, Футбол, Дартс, Боулинг, Кубик, Слоты, Мины, Рулетка, КНБ")
-    await bot.delete_webhook(drop_pending_updates=True)
-    await dp.start_polling(bot)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+            multiplier = 5.
