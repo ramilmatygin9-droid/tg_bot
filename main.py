@@ -15,7 +15,7 @@ dp = Dispatcher()
 # БАЗА ДАННЫХ ПОЛЬЗОВАТЕЛЕЙ
 users_db = {}
 game_sessions = {}
-rocket_sessions = {}  # Для игры Ракета
+rocket_sessions = {}
 DOTS = "···················"
 
 # --- ФУНКЦИИ ДЛЯ РАБОТЫ С ПОЛЬЗОВАТЕЛЯМИ ---
@@ -160,51 +160,39 @@ class SlotMachine:
 slot_machine = SlotMachine()
 
 
-# --- ИГРА РАКЕТА (CRASH GAME) ---
+# --- ИГРА РАКЕТА ---
 def generate_multiplier():
-    """Генерирует случайный множитель от 1.01 до 10.00"""
-    # Шанс взрыва на малых множителях меньше
     rand = random.random()
-    if rand < 0.3:  # 30% - взрыв до x2
+    if rand < 0.3:
         return round(random.uniform(1.01, 2.00), 2)
-    elif rand < 0.55:  # 25% - взрыв до x3
+    elif rand < 0.55:
         return round(random.uniform(2.01, 3.00), 2)
-    elif rand < 0.75:  # 20% - взрыв до x5
+    elif rand < 0.75:
         return round(random.uniform(3.01, 5.00), 2)
-    elif rand < 0.9:  # 15% - взрыв до x8
+    elif rand < 0.9:
         return round(random.uniform(5.01, 8.00), 2)
-    else:  # 10% - взрыв до x10
+    else:
         return round(random.uniform(8.01, 10.00), 2)
 
 
 def get_rocket_animation(multiplier):
-    """Анимация ракеты в зависимости от множителя"""
     if multiplier < 1.5:
-        rocket = "🚀"
-        trail = "💨"
+        rocket, trail = "🚀", "💨"
     elif multiplier < 2.5:
-        rocket = "🚀➡️"
-        trail = "💨💨"
+        rocket, trail = "🚀➡️", "💨💨"
     elif multiplier < 4:
-        rocket = "🚀🚀"
-        trail = "💨💨💨"
+        rocket, trail = "🚀🚀", "💨💨💨"
     elif multiplier < 6:
-        rocket = "⚡🚀⚡"
-        trail = "🔥🔥🔥"
+        rocket, trail = "⚡🚀⚡", "🔥🔥🔥"
     elif multiplier < 8:
-        rocket = "💥🚀⚡"
-        trail = "💥💥💥"
+        rocket, trail = "💥🚀⚡", "💥💥💥"
     else:
-        rocket = "💢🚀💢"
-        trail = "💢💢💢"
+        rocket, trail = "💢🚀💢", "💢💢💢"
     
     bar_length = min(int(multiplier * 5), 50)
     bar = "▓" * bar_length + "░" * (50 - bar_length)
     
-    return f"""
-{rocket} {trail}
-[{bar}] x{multiplier:.2f}
-"""
+    return f"\n{rocket} {trail}\n[{bar}] x{multiplier:.2f}\n"
 
 
 @dp.callback_query(F.data == "prep_rocket")
@@ -217,7 +205,6 @@ async def prepare_rocket(call: types.CallbackQuery):
 1️⃣ Сделай ставку и запусти ракету
 2️⃣ Множитель будет расти от x1.00 до x10.00
 3️⃣ Забери деньги ДО того, как ракета улетит!
-4️⃣ Чем выше множитель - тем больше выигрыш!
 
 💸 <b>Твоя ставка:</b> {user['bet']} m¢
 💰 <b>Баланс:</b> {user['balance']} m¢
@@ -236,10 +223,8 @@ async def rocket_start(call: types.CallbackQuery):
         await call.answer("❌ Недостаточно средств!", show_alert=True)
         return
     
-    # Списываем ставку
     update_balance(call.from_user.id, -bet, skip_stats=True)
     
-    # Создаем сессию игры
     rocket_sessions[call.from_user.id] = {
         'bet': bet,
         'active': True,
@@ -250,7 +235,6 @@ async def rocket_start(call: types.CallbackQuery):
         'chat_id': call.message.chat.id
     }
     
-    # Генерируем множитель краша
     crash_multiplier = generate_multiplier()
     rocket_sessions[call.from_user.id]['crash_multiplier'] = crash_multiplier
     
@@ -268,18 +252,16 @@ async def rocket_start(call: types.CallbackQuery):
     msg = await call.message.edit_text(text, reply_markup=rocket_kb())
     rocket_sessions[call.from_user.id]['message_id'] = msg.message_id
     
-    # Запускаем анимацию роста множителя
     asyncio.create_task(rocket_animation(call.from_user.id, msg.chat.id, msg.message_id, crash_multiplier))
 
 
 async def rocket_animation(user_id, chat_id, message_id, crash_multiplier):
-    """Анимация роста множителя"""
     session = rocket_sessions.get(user_id)
     if not session:
         return
     
     multiplier = 1.00
-    step = 0.03  # Шаг увеличения
+    step = 0.03
     
     while multiplier < crash_multiplier and session.get('active', False) and not session.get('cashed_out', False):
         multiplier = round(multiplier + step, 2)
@@ -304,32 +286,27 @@ async def rocket_animation(user_id, chat_id, message_id, crash_multiplier):
         
         await asyncio.sleep(0.3)
     
-    # Ракета взорвалась / улетела
     if not session.get('cashed_out', False) and session.get('active', False):
         session['active'] = False
         session['crashed'] = True
         
-        text = f"""💥 <b>РАКЕТА ВЗОРВАЛАСЬ / УЛЕТЕЛА!</b> 💥
+        text = f"""💥 <b>РАКЕТА ВЗОРВАЛАСЬ!</b> 💥
 {DOTS}
 💰 Ставка: {session['bet']} m¢
 💥 Множитель в момент взрыва: <b>x{crash_multiplier:.2f}</b>
 {DOTS}
 ❌ <b>ВЫ ПРОИГРАЛИ!</b> -{session['bet']} m¢
-💰 Баланс: {get_user(user_id)['balance']} m¢
-
-🚀 <i>Попробуй снова - в следующий раз повезёт!</i>"""
+💰 Баланс: {get_user(user_id)['balance']} m¢"""
         
         try:
             await bot.edit_message_text(text, chat_id, message_id, reply_markup=main_kb())
         except:
             pass
         
-        # Обновляем статистику
         user = get_user(user_id)
         user['total_games'] += 1
         user['total_losses'] += 1
         
-        # Удаляем сессию
         del rocket_sessions[user_id]
 
 
@@ -341,7 +318,6 @@ async def rocket_cashout(call: types.CallbackQuery):
         await call.answer("Игра не активна!", show_alert=True)
         return
     
-    # Забираем выигрыш
     session['cashed_out'] = True
     session['active'] = False
     
@@ -349,9 +325,7 @@ async def rocket_cashout(call: types.CallbackQuery):
     bet = session['bet']
     win_amount = int(bet * multiplier)
     
-    # Начисляем выигрыш
     update_balance(call.from_user.id, win_amount)
-    
     user = get_user(call.from_user.id)
     
     text = f"""🎉 <b>ВЫ ЗАБРАЛИ ВЫИГРЫШ!</b> 🎉
@@ -360,21 +334,17 @@ async def rocket_cashout(call: types.CallbackQuery):
 📈 Множитель: <b>x{multiplier:.2f}</b>
 💰 Выигрыш: <b>+{win_amount} m¢</b>
 {DOTS}
-💎 Новый баланс: <b>{user['balance']} m¢</b>
-
-✅ <i>Отличный забег! Сыграй ещё!</i>"""
+💎 Новый баланс: <b>{user['balance']} m¢</b>"""
     
     await call.message.edit_text(text, reply_markup=main_kb())
     
-    # Обновляем статистику
     user['total_games'] += 1
     user['total_wins'] += 1
     
-    # Удаляем сессию
     del rocket_sessions[call.from_user.id]
 
 
-# --- ОСТАЛЬНЫЕ ОБРАБОТЧИКИ ---
+# --- ОБРАБОТЧИКИ ---
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     user = get_user(message.from_user.id)
@@ -383,10 +353,10 @@ async def cmd_start(message: types.Message):
 💰 <b>Баланс:</b> {user['balance']} m¢
 💸 <b>Ставка:</b> {user['bet']} m¢
 
-🚀 <b>НОВАЯ ИГРА - РАКЕТА!</b>
-Играй как в казино: запусти ракету и забери деньги до взрыва!
+🚀 <b>ИГРА РАКЕТА!</b>
+Запусти ракету и забери деньги до взрыва!
 
-👇 <i>Выбери игру и начинай!</i>"""
+👇 <i>Выбери игру:</i>"""
     await message.answer(text, reply_markup=main_kb())
 
 
@@ -431,9 +401,9 @@ async def back_to_main(call: types.CallbackQuery):
 💰 <b>Баланс:</b> {user['balance']} m¢
 💸 <b>Ставка:</b> {user['bet']} m¢
 
-🚀 <b>НОВАЯ ИГРА - РАКЕТА!</b>
+🚀 <b>ИГРА РАКЕТА!</b>
 
-👇 <i>Выбери игру и начинай!</i>"""
+👇 <i>Выбери игру:</i>"""
     await call.message.edit_text(text, reply_markup=main_kb())
 
 
@@ -453,7 +423,7 @@ async def dev(call: types.CallbackQuery):
     await call.answer("🚧 В разработке", show_alert=True)
 
 
-# --- ПОДГОТОВКА ДРУГИХ ИГР ---
+# --- ПОДГОТОВКА ИГР ---
 @dp.callback_query(F.data.startswith("prep_"))
 async def prepare_games(call: types.CallbackQuery):
     game = call.data.split("_")[1]
@@ -494,7 +464,7 @@ async def prepare_games(call: types.CallbackQuery):
                               InlineKeyboardButton(text="➖ Меньше 3 - x2.9", callback_data="play_dice_low")]]},
         "slots": {"text": f"🎰 <b>Слоты</b>\n{DOTS}\n💸 Ставка: {bet} m¢\n\nНажми на кнопку и крути барабаны!",
                   "buttons": []},
-        "wheel": {"text": f"🎡 <b>Рулетка</b>\n{DOTS}\n💸 Ставка: {bet} m¢\n\nВыбери цвет и удвой ставку!",
+        "wheel": {"text": f"🎡 <b>Рулетка</b>\n{DOTS}\n💸 Ставка: {bet} m¢\n\nВыбери цвет!",
                   "buttons": []},
         "rps": {"text": f"🪨✂️📄 <b>Камень-ножницы-бумага</b>\n{DOTS}\n💸 Ставка: {bet} m¢\n\nСыграй с ботом!",
                 "buttons": []}
@@ -717,4 +687,50 @@ async def play_engine(call: types.CallbackQuery):
             multiplier = 5.8 if win else 0
         else:
             win = 1 <= val <= 5
-            multiplier = 5.
+            multiplier = 5.8 if win else 0
+    elif game_code == "dice":
+        if selection.isdigit():
+            win = val == int(selection)
+            multiplier = 5.8 if win else 0
+        elif selection == "even":
+            win = val % 2 == 0
+            multiplier = 1.94 if win else 0
+        elif selection == "odd":
+            win = val % 2 == 1
+            multiplier = 1.94 if win else 0
+        elif selection == "equal3":
+            win = val == 3
+            multiplier = 5.8 if win else 0
+        elif selection == "high":
+            win = val > 3
+            multiplier = 1.94 if win else 0
+        elif selection == "low":
+            win = val < 3
+            multiplier = 2.9 if win else 0
+
+    if win:
+        win_amount = int(bet * multiplier)
+        update_balance(call.from_user.id, win_amount)
+        header = "🥳 ПОБЕДА! ✅"
+        outcome_text = f"💰 Выигрыш: x{multiplier} = +{win_amount} m¢"
+    else:
+        header = "😭 ПРОИГРЫШ ❌"
+        outcome_text = f"💸 Потеряно: -{bet} m¢"
+
+    res_text = f"""{header}
+{DOTS}
+💸 Ставка: {bet} m¢
+🎲 Выбрано: {selection}
+🎯 Выпало: {val}
+{DOTS}
+{outcome_text}
+💰 Баланс: {user['balance']} m¢"""
+
+    await call.message.answer(res_text, reply_markup=main_kb())
+    await call.message.delete()
+
+
+# --- МИНЫ ---
+def mines_start_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+       
