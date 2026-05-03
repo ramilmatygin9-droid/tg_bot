@@ -24,62 +24,64 @@ def get_user(user_id):
 
 def main_menu_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🎮 ИГРЫ", callback_data="all_games")],
+        [InlineKeyboardButton(text="🎮 ИГРАТЬ", callback_data="all_games")],
         [InlineKeyboardButton(text="💰 БАЛАНС", callback_data="my_balance")]
     ])
 
 def games_menu_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🚀 РАКЕТА X2", callback_data="game_rocket")],
+        [InlineKeyboardButton(text="🚀 РАКЕТА (БАРАБАН)", callback_data="game_rocket")],
         [InlineKeyboardButton(text="💣 МИНЫ 5x5", callback_data="game_mines")],
         [InlineKeyboardButton(text="🔙 НАЗАД", callback_data="to_main")]
     ])
 
-# --- ИГРА: РАКЕТА С АНИМАЦИЕЙ ---
+# --- ИГРА: РАКЕТА (ЭФФЕКТ БАРАБАНА) ---
 @dp.callback_query(F.data == "game_rocket")
 async def rocket_start(callback: CallbackQuery):
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🌍 Низко (x2)", callback_data="fly_2.0")],
-        [InlineKeyboardButton(text="🌌 Высоко (x5)", callback_data="fly_5.0")],
+        [InlineKeyboardButton(text="🎰 ЗАПУСК (100 💰)", callback_data="spin_rocket")],
         [InlineKeyboardButton(text="🔙 Назад", callback_data="all_games")]
     ])
-    await callback.message.edit_text("🚀 **ПОДГОТОВКА К ЗАПУСКУ**\n\nВыбери высоту полета:", reply_markup=kb, parse_mode="Markdown")
+    await callback.message.edit_text("🚀 **РАКЕТНЫЙ БАРАБАН**\n\nНажми кнопку, чтобы запустить ракету и узнать множитель!", reply_markup=kb, parse_mode="Markdown")
 
-@dp.callback_query(F.data.startswith("fly_"))
-async def rocket_animation(callback: CallbackQuery):
+@dp.callback_query(F.data == "spin_rocket")
+async def rocket_spin(callback: CallbackQuery):
     user = get_user(callback.from_user.id)
     if user["balance"] < 100:
-        return await callback.answer("Мало коинов (нужно 100)!", show_alert=True)
+        return await callback.answer("Мало коинов!", show_alert=True)
     
     user["balance"] -= 100
-    mult = float(callback.data.split("_")[1])
     
-    # Анимация полета
-    stages = ["🚀 Взлёт...", "🔥🚀 Прохождение атмосферы...", "✨🚀 Выход в открытый космос...", "🛰🚀 Почти долетели..."]
-    for stage in stages:
-        await callback.message.edit_text(f"**{stage}**", parse_mode="Markdown")
-        await asyncio.sleep(0.7)
+    # Список для эффекта барабана
+    slots = ["🛸 x0.0", "🚀 x1.5", "✨ x2.0", "🔥 x0.0", "🌌 x5.0", "🚀 x1.1", "🛸 x0.0", "💎 x10.0"]
+    
+    # Имитация кручения (барабан)
+    for _ in range(6): # 6 раз меняем картинку
+        random_slot = random.choice(slots)
+        await callback.message.edit_text(f"🎰 **КРУТИМ БАРАБАН:**\n\n> {random_slot} <", parse_mode="Markdown")
+        await asyncio.sleep(0.3)
 
-    # Шанс (x2 - 45%, x5 - 15%)
-    chance = 45 if mult == 2.0 else 15
-    if random.randint(1, 100) <= chance:
-        win = int(100 * mult)
-        user["balance"] += win
-        await callback.message.answer(f"✅ **УСПЕХ!** Ракета долетела на x{mult}!\nВыигрыш: `{win}` 💰", parse_mode="Markdown")
-    else:
-        await callback.message.answer(f"💥 **КАТАСТРОФА!** Ракета взорвалась...\nПотеряно: `100` 💰", parse_mode="Markdown")
+    # Финальный расчет
+    # Шансы: 50% - проигрыш (x0), 30% - x1.5, 15% - x3, 5% - x10
+    res_val = random.choices([0.0, 1.5, 3.0, 10.0], weights=[50, 30, 15, 5])[0]
     
-    await all_games(callback)
+    if res_val > 0:
+        win = int(100 * res_val)
+        user["balance"] += win
+        result_text = f"✅ **ПОБЕДА!**\n\nРезультат: ✨ `{res_val}x`\nВыигрыш: +{win} 💰"
+    else:
+        result_text = f"💥 **ВЗРЫВ!**\n\nРезультат: 💀 `0.0x`\nРакета не взлетела."
+
+    await callback.message.edit_text(result_text, reply_markup=games_menu_kb(), parse_mode="Markdown")
 
 # --- ИГРА: МИНЫ 5x5 ---
 @dp.callback_query(F.data == "game_mines")
 async def mines_5x5(callback: CallbackQuery):
-    # Создаем поле 5x5 (25 ячеек). Сделаем 5 мин на поле.
     field = (["bomb"] * 5) + (["gem"] * 20)
     random.shuffle(field)
     
     kb = []
-    for i in range(0, 25, 5): # Создаем 5 рядов по 5 кнопок
+    for i in range(0, 25, 5):
         row = []
         for j in range(5):
             item = field[i + j]
@@ -89,7 +91,7 @@ async def mines_5x5(callback: CallbackQuery):
     kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="all_games")])
     
     await callback.message.edit_text(
-        "💣 **МИНЫ 5x5**\nНа поле спрятано **5 мин**. Найди кристалл!\n💎 +100 коинов | 💥 -250 коинов", 
+        "💣 **МИНЫ 5x5**\nНа поле **5 мин**. Найди кристалл!\n💎 +100 | 💥 -250", 
         reply_markup=InlineKeyboardMarkup(inline_keyboard=kb)
     )
 
@@ -100,19 +102,18 @@ async def mine_result(callback: CallbackQuery):
     
     if res == "bomb":
         user["balance"] -= 250
-        await callback.answer("💥 БОМБА! Вы подорвались! -250 коинов.", show_alert=True)
+        await callback.answer("💥 БОМБА! -250 💰", show_alert=True)
         await all_games(callback)
     else:
         user["balance"] += 100
-        await callback.answer("💎 КРИСТАЛЛ! +100 коинов.", show_alert=True)
-        # Оставляем игрока на поле, чтобы он мог нажать еще раз
+        await callback.answer("💎 КРИСТАЛЛ! +100 💰", show_alert=True)
         await mines_5x5(callback)
 
-# --- СИСТЕМНЫЕ ФУНКЦИИ ---
+# --- СИСТЕМА ---
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
-    await message.answer("🛠 Добро пожаловать в Phoenix Games!", reply_markup=main_menu_kb())
+    await message.answer("🚀 Добро пожаловать!", reply_markup=main_menu_kb())
 
 @dp.callback_query(F.data == "all_games")
 async def all_games(callback: CallbackQuery):
@@ -121,15 +122,14 @@ async def all_games(callback: CallbackQuery):
 @dp.callback_query(F.data == "my_balance")
 async def check_balance(callback: CallbackQuery):
     user = get_user(callback.from_user.id)
-    await callback.answer(f"💰 Баланс: {user['balance']} коинов", show_alert=True)
+    await callback.answer(f"💰 Баланс: {user['balance']}", show_alert=True)
 
 @dp.callback_query(F.data == "to_main")
 async def to_main(callback: CallbackQuery):
-    await callback.message.edit_text("🛠 Главное меню:", reply_markup=main_menu_kb())
+    await callback.message.edit_text("🏠 Главное меню:", reply_markup=main_menu_kb())
 
 async def main():
     await bot.delete_webhook(drop_pending_updates=True)
-    print("🚀 БОТ ЗАПУЩЕН!")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
