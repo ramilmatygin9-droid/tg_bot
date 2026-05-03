@@ -13,7 +13,7 @@ from aiogram.enums import ParseMode
 
 # ========== КОНФИГ ==========
 BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"  # СЮДА ВСТАВЬ ТОКЕН ОТ @BotFather
-ADMIN_IDS = [123456789]  # СЮДА ВСТАВЬ СВОЙ ID
+ADMIN_IDS = [8727191045]  # СЮДА ВСТАВЬ СВОЙ ID
 
 # ========== БАЗА ДАННЫХ ==========
 def init_db():
