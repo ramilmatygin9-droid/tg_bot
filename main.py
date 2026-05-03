@@ -1,8 +1,7 @@
-# casino_bot.py - ИСПРАВЛЕННАЯ ВЕРСИЯ
-
 import asyncio
 import random
 import sqlite3
+import logging
 from datetime import datetime
 from typing import Optional, Tuple
 
@@ -12,8 +11,12 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.enums import ParseMode
 
 # ========== КОНФИГ ==========
-BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"  # СЮДА ВСТАВЬ ТОКЕН ОТ @BotFather
-ADMIN_IDS = [8727191045]  # СЮДА ВСТАВЬ СВОЙ ID
+# ЗАМЕНИ ТОКЕН НА СВОЙ!
+BOT_TOKEN = "8536336708:AAENFbvx3EwI1jvZl8-0qLYKWaKey8G3j3I"
+ADMIN_IDS = [8727191045]  # Твой ID (узнай в @userinfobot)
+
+# Включаем логирование, чтобы видеть ошибки в консоли
+logging.basicConfig(level=logging.INFO)
 
 # ========== БАЗА ДАННЫХ ==========
 def init_db():
@@ -42,7 +45,7 @@ def get_user(user_id: int):
     c.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
     user = c.fetchone()
     if not user:
-        c.execute("INSERT INTO users (user_id) VALUES (?)", (user_id,))
+        c.execute("INSERT INTO users (user_id, balance) VALUES (?, ?)", (user_id, 1000))
         conn.commit()
         c.execute("SELECT * FROM users WHERE user_id = ?", (user_id,))
         user = c.fetchone()
@@ -61,7 +64,8 @@ def update_balance(user_id: int, amount: int) -> bool:
     conn = sqlite3.connect("casino.db")
     c = conn.cursor()
     c.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,))
-    current = c.fetchone()[0]
+    res = c.fetchone()
+    current = res[0] if res else 0
     if current + amount < 0:
         conn.close()
         return False
@@ -76,7 +80,6 @@ def add_game_log(user_id: int, game_type: str, bet: int, win: int):
     c.execute("UPDATE users SET games_played = games_played + 1 WHERE user_id = ?", (user_id,))
     if win > 0:
         c.execute("UPDATE users SET games_won = games_won + 1 WHERE user_id = ?", (user_id,))
-    # Джекпот налог
     tax = int(bet * 0.01)
     if tax > 0:
         c.execute("UPDATE jackpot SET amount = amount + ?", (tax,))
@@ -97,7 +100,10 @@ def get_last_command_time(user_id: int):
     result = c.fetchone()
     conn.close()
     if result and result[0]:
-        return datetime.fromisoformat(result[0])
+        try:
+            return datetime.fromisoformat(result[0])
+        except:
+            return None
     return None
 
 def get_jackpot() -> int:
@@ -117,80 +123,65 @@ def get_top_players(limit=10):
     return result
 
 def format_num(n: int) -> str:
-    return f"{n:,}".replace(",", ".")
+    return f"{n:,}".replace(",", " ")
 
-# ========== ИГРЫ ==========
+# ========== ЛОГИКА ИГР ==========
 def roulette_spin(bet_type: str):
     number = random.randint(0, 36)
-    if number == 0:
-        color = "green"
-    elif number % 2 == 0:
-        color = "black"
-    else:
-        color = "red"
+    color = "green" if number == 0 else ("red" if number % 2 != 0 else "black")
     
-    if bet_type == "red" and color == "red":
-        return number, True
-    if bet_type == "black" and color == "black":
-        return number, True
-    if bet_type.isdigit() and int(bet_type) == number:
-        return number, True
+    if bet_type == "red" and color == "red": return number, True
+    if bet_type == "black" and color == "black": return number, True
+    if bet_type.isdigit() and int(bet_type) == number: return number, True
     return number, False
 
 def slots_spin():
     symbols = ["🍒", "🍋", "🍊", "🍉", "💎", "7️⃣"]
-    result = [random.choice(symbols) for _ in range(3)]
-    combo = "".join(result)
-    mult = {
-        "🍒🍒🍒": 3, "🍋🍋🍋": 3, "🍊🍊🍊": 3,
-        "🍉🍉🍉": 3, "💎💎💎": 10, "7️⃣7️⃣7️⃣": 50
-    }
-    return combo, mult.get(combo, 0)
+    res = [random.choice(symbols) for _ in range(3)]
+    combo = "".join(res)
+    mults = {"🍒🍒🍒": 3, "🍋🍋🍋": 3, "🍊🍊🍊": 3, "🍉🍉🍉": 5, "💎💎💎": 15, "7️⃣7️⃣7️⃣": 50}
+    return combo, mults.get(combo, 0)
 
-def dice_roll():
-    return random.randint(1, 6), random.randint(1, 6)
-
-# ========== БОТ ==========
+# ========== ХЕНДЛЕРЫ ==========
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 @dp.message(Command("start"))
 async def start(message: types.Message):
     user_id = message.from_user.id
-    username = message.from_user.username or str(user_id)
+    username = message.from_user.username or f"id{user_id}"
     
     conn = sqlite3.connect("casino.db")
     c = conn.cursor()
+    get_user(user_id) # Регистрируем если нет
     c.execute("UPDATE users SET username = ? WHERE user_id = ?", (username, user_id))
     conn.commit()
     conn.close()
     
     user = get_user(user_id)
     await message.answer(
-        f"🎰 <b>Добро пожаловать в Казино!</b>\n\n"
-        f"💰 Твой баланс: {format_num(user['balance'])} 🪙\n\n"
+        f"🎰 <b>Добро пожаловать, {username}!</b>\n\n"
+        f"💰 Баланс: {format_num(user['balance'])} 🪙\n\n"
         f"🎮 <b>Команды:</b>\n"
-        f"/roulette [ставка] [красное/черное/число]\n"
+        f"/roulette [ставка] [red/black/число]\n"
         f"/slots [ставка]\n"
         f"/dice [ставка] [больше/меньше/ничья]\n"
-        f"/bonus - ежедневный бонус (+200)\n"
-        f"/profile - статистика\n"
-        f"/top - топ игроков\n"
-        f"/jackpot - джекпот",
+        f"/bonus - бонус раз в сутки\n"
+        f"/profile - стата\n"
+        f"/top - топ игроков",
         parse_mode=ParseMode.HTML
     )
 
 @dp.message(Command("bonus"))
 async def bonus(message: types.Message):
     user = get_user(message.from_user.id)
-    last = datetime.fromisoformat(user['last_bonus']) if user['last_bonus'] else None
+    last_str = user['last_bonus']
     
-    if last:
-        diff = (datetime.now() - last).total_seconds()
+    if last_str:
+        diff = (datetime.now() - datetime.fromisoformat(last_str)).total_seconds()
         if diff < 86400:
-            hours = int((86400 - diff) // 3600)
-            mins = int(((86400 - diff) % 3600) // 60)
-            await message.answer(f"⏰ Бонус через {hours}ч {mins}мин")
+            rem = int(86400 - diff)
+            await message.answer(f"⏰ Бонус будет доступен через {rem//3600}ч {(rem%3600)//60}мин")
             return
     
     update_balance(message.from_user.id, 200)
@@ -199,222 +190,115 @@ async def bonus(message: types.Message):
     c.execute("UPDATE users SET last_bonus = ? WHERE user_id = ?", (datetime.now().isoformat(), message.from_user.id))
     conn.commit()
     conn.close()
-    await message.answer("✅ Получено +200 🪙")
+    await message.answer("✅ Ты получил 200 🪙!")
 
-@dp.message(Command("profile"))
-async def profile(message: types.Message):
-    user = get_user(message.from_user.id)
-    await message.answer(
-        f"👤 <b>Профиль</b>\n\n"
-        f"💰 Баланс: {format_num(user['balance'])} 🪙\n"
-        f"🎮 Сыграно: {user['games_played']}\n"
-        f"🏆 Побед: {user['games_won']}",
-        parse_mode=ParseMode.HTML
-    )
-
-@dp.message(Command("top"))
-async def top(message: types.Message):
-    top_list = get_top_players()
-    text = "🏆 <b>Топ игроков</b>\n\n"
-    for i, (uid, name, bal) in enumerate(top_list[:10], 1):
-        text += f"{i}. {name or uid} — {format_num(bal)} 🪙\n"
-    await message.answer(text, parse_mode=ParseMode.HTML)
-
-@dp.message(Command("jackpot"))
-async def jackpot(message: types.Message):
-    jp = get_jackpot()
-    await message.answer(f"🎰 <b>Джекпот:</b> {format_num(jp)} 🪙", parse_mode=ParseMode.HTML)
-
+@router_roulette = F.text.startswith("/roulette") # Альтернативный способ
 @dp.message(Command("roulette"))
 async def roulette(message: types.Message):
     last = get_last_command_time(message.from_user.id)
-    if last:
-        diff = (datetime.now() - last).total_seconds()
-        if diff < 3:
-            await message.answer(f"⏰ Подожди {int(3-diff)} сек")
-            return
-    
-    parts = message.text.split()
-    if len(parts) < 3:
-        await message.answer("❌ Пример: /roulette 100 красное")
+    if last and (datetime.now() - last).total_seconds() < 3:
+        await message.answer("⏰ Подожди 3 секунды!")
         return
-    
+
+    args = message.text.split()
+    if len(args) < 3:
+        await message.answer("❌ Формат: /roulette 100 red")
+        return
+
     try:
-        bet = int(parts[1])
+        bet = int(args[1])
+        if bet <= 0: raise ValueError
     except:
-        await message.answer("❌ Ставка должна быть числом")
+        await message.answer("❌ Ставка должна быть целым числом больше 0")
         return
-    
+
     user = get_user(message.from_user.id)
     if user['balance'] < bet:
-        await message.answer(f"❌ Не хватает! Баланс: {format_num(user['balance'])}")
+        await message.answer("❌ Недостаточно средств!")
         return
-    
-    option = parts[2].lower()
+
+    target = args[2].lower()
     bet_type = None
-    mult = 1
+    mult = 2
     
-    if option in ["красное", "красный", "red"]:
-        bet_type = "red"
-        mult = 2
-    elif option in ["черное", "черный", "black"]:
-        bet_type = "black"
-        mult = 2
-    else:
-        try:
-            num = int(option)
-            if 0 <= num <= 36:
-                bet_type = str(num)
-                mult = 35
-        except:
-            pass
+    if target in ["красное", "red", "к"]: bet_type = "red"
+    elif target in ["черное", "black", "ч"]: bet_type = "black"
+    elif target.isdigit() and 0 <= int(target) <= 36:
+        bet_type = target
+        mult = 35
     
     if not bet_type:
-        await message.answer("❌ Выбери: красное, черное или число 0-36")
+        await message.answer("❌ Выбери: red, black или число 0-36")
         return
-    
-    number, won = roulette_spin(bet_type)
-    color = "зеленое" if number == 0 else ("красное" if number % 2 else "черное")
+
+    num, won = roulette_spin(bet_type)
+    color = "🟢" if num == 0 else ("🔴" if num % 2 != 0 else "⚫️")
     
     if won:
-        win_sum = bet * mult
+        win_sum = bet * (mult - 1)
         update_balance(message.from_user.id, win_sum)
         add_game_log(message.from_user.id, "roulette", bet, win_sum)
-        await message.answer(f"🎡 Выпало: {number} ({color})\n✅ Выигрыш +{format_num(win_sum)} 🪙")
+        await message.answer(f"🎡 Выпало: {num} {color}\n✅ Выигрыш: +{format_num(bet*mult)} 🪙")
     else:
         update_balance(message.from_user.id, -bet)
         add_game_log(message.from_user.id, "roulette", bet, 0)
-        await message.answer(f"🎡 Выпало: {number} ({color})\n❌ Проигрыш -{format_num(bet)} 🪙")
+        await message.answer(f"🎡 Выпало: {num} {color}\n❌ Проигрыш: -{format_num(bet)} 🪙")
     
     update_last_command(message.from_user.id)
 
 @dp.message(Command("slots"))
 async def slots(message: types.Message):
-    last = get_last_command_time(message.from_user.id)
-    if last and (datetime.now() - last).total_seconds() < 3:
-        await message.answer("⏰ Подожди 3 сек")
-        return
-    
-    parts = message.text.split()
-    if len(parts) < 2:
-        await message.answer("❌ Пример: /slots 100")
+    args = message.text.split()
+    if len(args) < 2:
+        await message.answer("❌ Формат: /slots 100")
         return
     
     try:
-        bet = int(parts[1])
+        bet = int(args[1])
     except:
-        await message.answer("❌ Ставка числом")
+        await message.answer("❌ Ошибка в ставке")
         return
-    
-    user = get_user(message.from_user.id)
-    if user['balance'] < bet:
-        await message.answer(f"❌ Не хватает! Баланс: {format_num(user['balance'])}")
+
+    if not update_balance(message.from_user.id, -bet):
+        await message.answer("❌ Нет денег!")
         return
-    
+
     combo, mult = slots_spin()
     if mult > 0:
-        win_sum = bet * mult
-        update_balance(message.from_user.id, win_sum)
-        add_game_log(message.from_user.id, "slots", bet, win_sum)
-        await message.answer(f"🎰 {combo} x{mult}\n✅ +{format_num(win_sum)} 🪙")
+        win = bet * mult
+        update_balance(message.from_user.id, win)
+        await message.answer(f"🎰 {combo}\n✅ Джекпот! +{format_num(win)} 🪙")
     else:
-        update_balance(message.from_user.id, -bet)
-        add_game_log(message.from_user.id, "slots", bet, 0)
-        await message.answer(f"🎰 {combo}\n❌ -{format_num(bet)} 🪙")
-    
-    update_last_command(message.from_user.id)
+        await message.answer(f"🎰 {combo}\n❌ Мимо! -{format_num(bet)} 🪙")
 
-@dp.message(Command("dice"))
-async def dice(message: types.Message):
-    last = get_last_command_time(message.from_user.id)
-    if last and (datetime.now() - last).total_seconds() < 3:
-        await message.answer("⏰ Подожди 3 сек")
-        return
-    
-    parts = message.text.split()
-    if len(parts) < 3:
-        await message.answer("❌ Пример: /dice 100 больше")
-        return
-    
-    try:
-        bet = int(parts[1])
-    except:
-        await message.answer("❌ Ставка числом")
-        return
-    
-    bet_type = parts[2].lower()
-    if bet_type not in ["больше", "меньше", "ничья"]:
-        await message.answer("❌ больше/меньше/ничья")
-        return
-    
-    user = get_user(message.from_user.id)
-    if user['balance'] < bet:
-        await message.answer(f"❌ Не хватает! {format_num(user['balance'])}")
-        return
-    
-    p, b = dice_roll()
-    win = False
-    if (bet_type == "больше" and p > b) or (bet_type == "меньше" and p < b) or (bet_type == "ничья" and p == b):
-        win = True
-    
-    if win:
-        win_sum = bet * 2
-        update_balance(message.from_user.id, win_sum)
-        add_game_log(message.from_user.id, "dice", bet, win_sum)
-        await message.answer(f"🎲 Твой {p} | Бот {b}\n✅ +{format_num(win_sum)} 🪙")
-    else:
-        update_balance(message.from_user.id, -bet)
-        add_game_log(message.from_user.id, "dice", bet, 0)
-        await message.answer(f"🎲 Твой {p} | Бот {b}\n❌ -{format_num(bet)} 🪙")
-    
-    update_last_command(message.from_user.id)
-
-@dp.message(Command("help"))
-async def help_cmd(message: types.Message):
-    await message.answer(
-        "🎮 <b>Команды:</b>\n"
-        "/roulette 100 красное\n"
-        "/slots 50\n"
-        "/dice 200 больше\n"
-        "/bonus - ежедневно +200\n"
-        "/profile - статистика\n"
-        "/top - топ\n"
-        "/jackpot - джекпот",
-        parse_mode=ParseMode.HTML
-    )
+@dp.message(Command("top"))
+async def top_cmd(message: types.Message):
+    players = get_top_players()
+    msg = "🏆 <b>ТОП ИГРОКОВ:</b>\n\n"
+    for i, p in enumerate(players, 1):
+        msg += f"{i}. {p[1]} — {format_num(p[2])} 🪙\n"
+    await message.answer(msg, parse_mode=ParseMode.HTML)
 
 @dp.message(Command("give"))
-async def give_cmd(message: types.Message):
-    if message.from_user.id not in ADMIN_IDS:
-        await message.answer("❌ Нет прав")
-        return
+async def give(message: types.Message):
+    if message.from_user.id not in ADMIN_IDS: return
+    args = message.text.split()
+    if len(args) < 3: return
     
-    parts = message.text.split()
-    if len(parts) < 3:
-        await message.answer("❌ /give @username 500")
-        return
-    
-    target = parts[1].replace("@", "")
-    try:
-        amount = int(parts[2])
-    except:
-        await message.answer("❌ Число")
-        return
+    target = args[1].replace("@", "")
+    amount = int(args[2])
     
     conn = sqlite3.connect("casino.db")
     c = conn.cursor()
     c.execute("UPDATE users SET balance = balance + ? WHERE username = ?", (amount, target))
-    if c.rowcount == 0:
-        await message.answer("❌ Не найден")
-    else:
-        conn.commit()
-        await message.answer(f"✅ Выдано {amount} @{target}")
+    conn.commit()
     conn.close()
+    await message.answer(f"✅ Выдано {amount} пользователю {target}")
 
 # ========== ЗАПУСК ==========
 async def main():
     init_db()
-    print("🤖 Бот запущен! Проверь Telegram...")
+    print("Бот запущен!")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
