@@ -1,3 +1,68 @@
+import asyncio
+import logging
+import random
+from aiogram import Bot, Dispatcher, types, F
+from aiogram.filters import Command
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+
+# --- НАСТРОЙКИ ---
+TOKEN = "8536336708:AAENFbvx3EwI1jvZl8-0qLYKWaKey8G3j3I"
+ADMIN_ID = 0  # <--- ВСТАВЬ СВОЙ ID СЮДА (узнай в @userinfobot)
+
+logging.basicConfig(level=logging.INFO)
+bot = Bot(token=TOKEN)
+dp = Dispatcher()
+
+# Временная база данных
+users_data = {}
+bot_settings = {"welcome_text": "🎮 Добро пожаловать в Phoenix Ultimate Hub!"}
+
+class SetupState(StatesGroup):
+    waiting_for_welcome = State()
+
+def get_user(user_id):
+    if user_id not in users_data:
+        users_data[user_id] = {"balance": 1000}
+    return users_data[user_id]
+
+# --- КЛАВИАТУРЫ ---
+
+def main_menu_kb(user_id):
+    buttons = [
+        [InlineKeyboardButton(text="🕹 ИГРОВОЙ ЗАЛ", callback_data="all_games")],
+        [InlineKeyboardButton(text="💰 БАЛАНС", callback_data="my_balance")]
+    ]
+    if user_id == ADMIN_ID:
+        buttons.append([InlineKeyboardButton(text="⚙️ АДМИН-ПАНЕЛЬ", callback_data="admin_menu")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def games_menu_kb():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🚀 РАКЕТА (X2+)", callback_data="game_rocket")],
+        [InlineKeyboardButton(text="💣 МИНЫ", callback_data="game_mines")],
+        [InlineKeyboardButton(text="🎰 СЛОТЫ", callback_data="game_slots")],
+        [InlineKeyboardButton(text="🖱 КЛИКЕР", callback_data="game_clicker")],
+        [InlineKeyboardButton(text="⬅️ НАЗАД", callback_data="to_main")]
+    ])
+
+# --- ОСНОВНЫЕ КОМАНДЫ ---
+
+@dp.message(Command("start"))
+async def cmd_start(message: types.Message):
+    get_user(message.from_user.id)
+    await message.answer(bot_settings["welcome_text"], reply_markup=main_menu_kb(message.from_user.id))
+
+@dp.callback_query(F.data == "all_games")
+async def all_games(callback: CallbackQuery):
+    await callback.message.edit_text("✨ Выбери развлечение:", reply_markup=games_menu_kb())
+
+@dp.callback_query(F.data == "my_balance")
+async def check_balance(callback: CallbackQuery):
+    user = get_user(callback.from_user.id)
+    await callback.answer(f"💰 Твой баланс: {user['balance']} коинов", show_alert=True)
+
 # --- ИГРА: РАКЕТА (X-МНОЖИТЕЛИ) ---
 @dp.callback_query(F.data == "game_rocket")
 async def rocket_start(callback: CallbackQuery):
@@ -9,38 +74,118 @@ async def rocket_start(callback: CallbackQuery):
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="all_games")]
     ])
     await callback.message.edit_text(
-        "🚀 **ЗАПУСК РАКЕТЫ**\n\nВыбери высоту полета. Чем выше, тем больше риск взрыва!",
-        reply_markup=kb,
-        parse_mode="Markdown"
+        "🚀 **СТРАТЕГИЯ ПОЛЕТА**\n\nВыбери, как далеко полетит ракета.\nСтавка: **100 коинов**.",
+        reply_markup=kb, parse_mode="Markdown"
     )
 
 @dp.callback_query(F.data.startswith("fly_"))
 async def rocket_fly(callback: CallbackQuery):
     user = get_user(callback.from_user.id)
-    bet = 100  # Ставка за полет
-    
+    bet = 100
     if user["balance"] < bet:
-        return await callback.answer("Недостаточно коинов! (Нужно 100)", show_alert=True)
+        return await callback.answer("Недостаточно денег!", show_alert=True)
     
     user["balance"] -= bet
-    multiplier = float(callback.data.split("_")[1])
+    mult = float(callback.data.split("_")[1])
     
-    # Логика шанса: чем выше множитель, тем ниже шанс успеха
-    # x1.5 -> 70% шанс | x2 -> 45% | x5 -> 15% | x10 -> 5%
-    chance = 0
-    if multiplier == 1.5: chance = 70
-    elif multiplier == 2.0: chance = 45
-    elif multiplier == 5.0: chance = 15
-    elif multiplier == 10.0: chance = 5
+    # Шансы: чем выше x, тем ниже шанс
+    chances = {1.5: 75, 2.0: 48, 5.0: 18, 10.0: 7}
+    
+    await callback.message.edit_text(f"🚀 Ракета запущена на **x{mult}**... Ждем...")
+    await asyncio.sleep(2)
 
-    await callback.message.edit_text(f"🚀 Ракета взлетает на множитель **x{multiplier}**... 💨", parse_mode="Markdown")
-    await asyncio.sleep(2) # Эффект ожидания
-
-    if random.randint(1, 100) <= chance:
-        win_amount = int(bet * multiplier)
-        user["balance"] += win_amount
-        await callback.message.answer(f"✅ УСПЕХ! Ракета долетела! Твой выигрыш: **{win_amount}** коинов!", parse_mode="Markdown")
+    if random.randint(1, 100) <= chances[mult]:
+        win = int(bet * mult)
+        user["balance"] += win
+        await callback.message.answer(f"✅ ДОЛЕТЕЛА! Выигрыш: **{win}** коинов!")
     else:
-        await callback.message.answer(f"💥 БА-БАХ! Ракета взорвалась на полпути... Ты потерял {bet} коинов.")
-    
+        await callback.message.answer(f"💥 БА-БАХ! Ракета взорвалась. Потеряно {bet} коинов.")
     await all_games(callback)
+
+# --- ИГРА: МИНЫ ---
+@dp.callback_query(F.data == "game_mines")
+async def mines_start(callback: CallbackQuery):
+    field = [0, 0, 0, 1] # 1 - мина
+    random.shuffle(field)
+    kb = []
+    row = []
+    for i in range(4):
+        m_type = "m" if field[i] == 1 else "s"
+        row.append(InlineKeyboardButton(text="❓", callback_data=f"mine_{m_type}"))
+    kb.append(row)
+    kb.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="all_games")])
+    await callback.message.edit_text("💣 **МИННОЕ ПОЛЕ**\nНайди сокровище и не подорвись!", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
+
+@dp.callback_query(F.data.startswith("mine_"))
+async def mine_click(callback: CallbackQuery):
+    user = get_user(callback.from_user.id)
+    res = callback.data.split("_")[1]
+    if res == "m":
+        user["balance"] -= 150
+        await callback.answer("💥 ВЗРЫВ! -150 коинов", show_alert=True)
+        await all_games(callback)
+    else:
+        user["balance"] += 100
+        await callback.answer("💎 ТЫ НАШЕЛ КОИНЫ! +100", show_alert=True)
+        await mines_start(callback)
+
+# --- ИГРА: СЛОТЫ ---
+@dp.callback_query(F.data == "game_slots")
+async def play_slots(callback: CallbackQuery):
+    user = get_user(callback.from_user.id)
+    if user["balance"] < 50: return await callback.answer("Мало денег!")
+    user["balance"] -= 50
+    res = await callback.message.answer_dice(emoji="🎰")
+    await asyncio.sleep(3)
+    if res.dice.value in [1, 22, 43, 64]:
+        user["balance"] += 777
+        await callback.message.answer("🎰 ТРИ В РЯД! +777 коинов!")
+    await callback.answer()
+
+# --- ИГРА: КЛИКЕР ---
+@dp.callback_query(F.data == "game_clicker")
+async def play_clicker(callback: CallbackQuery):
+    user = get_user(callback.from_user.id)
+    user["balance"] += 10
+    await callback.message.edit_text(f"🖱 КЛИК-КЛИК!\nБаланс: {user['balance']}", 
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="💎 КЛИК (+10)", callback_data="game_clicker")],
+            [InlineKeyboardButton(text="⬅️ Выйти", callback_data="all_games")]
+        ]))
+    await callback.answer()
+
+# --- АДМИН-ПАНЕЛЬ ---
+
+@dp.callback_query(F.data == "admin_menu")
+async def admin_menu(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID: return
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📝 Изменить Приветствие", callback_data="set_welcome")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="to_main")]
+    ])
+    await callback.message.edit_text("⚙️ ПАНЕЛЬ АДМИНИСТРАТОРА", reply_markup=kb)
+
+@dp.callback_query(F.data == "set_welcome")
+async def set_welcome(callback: CallbackQuery, state: FSMContext):
+    await callback.message.answer("Пришли новый текст приветствия:")
+    await state.set_state(SetupState.waiting_for_welcome)
+
+@dp.message(SetupState.waiting_for_welcome)
+async def save_welcome(message: types.Message, state: FSMContext):
+    bot_settings["welcome_text"] = message.text
+    await message.answer("✅ Сохранено!")
+    await state.clear()
+
+# --- СИСТЕМНОЕ ---
+
+@dp.callback_query(F.data == "to_main")
+async def to_main(callback: CallbackQuery):
+    await callback.message.edit_text(bot_settings["welcome_text"], reply_markup=main_menu_kb(callback.from_user.id))
+
+async def main():
+    await bot.delete_webhook(drop_pending_updates=True)
+    print("--- ФУНКЦИОНАЛЬНЫЙ БОТ ЗАПУЩЕН ---")
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
