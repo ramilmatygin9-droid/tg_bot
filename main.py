@@ -1,113 +1,46 @@
-import asyncio
-import logging
-from aiogram import Bot, Dispatcher, types, F
-from aiogram.filters import Command
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
-
-# --- НАСТРОЙКИ ---
-TOKEN = "8536336708:AAENFbvx3EwI1jvZl8-0qLYKWaKey8G3j3I"
-ADMIN_ID = 0  # УЗНАЙ СВОЙ ID ЧЕРЕЗ @userinfobot И ВПИШИ СЮДА
-
-logging.basicConfig(level=logging.INFO)
-bot = Bot(token=TOKEN)
-dp = Dispatcher()
-
-# Глобальные настройки бота (можно менять из чата)
-bot_settings = {
-    "welcome_text": "👑 Добро пожаловать в Phoenix Ultra!",
-    "reward_amount": 1,
-    "bonus_min": 50,
-    "bonus_max": 200
-}
-
-# Состояния для изменения настроек
-class SetupState(StatesGroup):
-    waiting_for_welcome = State()
-    waiting_for_reward = State()
-
-# --- КЛАВИАТУРЫ ---
-def main_menu_kb(user_id):
-    buttons = [
-        [InlineKeyboardButton(text="🎮 Игры", callback_data="menu_games")],
-        [InlineKeyboardButton(text="🎁 Бонус", callback_data="get_bonus")],
-        [InlineKeyboardButton(text="🛠 Сообщить о баге", callback_data="report_bug")]
-    ]
-    # Если ты админ, добавляем кнопку настроек
-    if user_id == ADMIN_ID:
-        buttons.append([InlineKeyboardButton(text="⚙️ АДМИН-ПАНЕЛЬ", callback_data="admin_menu")])
-    
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
-
-# --- ОБРАБОТЧИКИ ---
-
-@dp.message(Command("start"))
-async def cmd_start(message: types.Message):
-    await message.answer(
-        bot_settings["welcome_text"],
-        reply_markup=main_menu_kb(message.from_user.id)
-    )
-
-# --- АДМИНКА ---
-@dp.callback_query(F.data == "admin_menu")
-async def admin_menu(callback: CallbackQuery):
-    if callback.from_user.id != ADMIN_ID:
-        return await callback.answer("Доступ запрещен!")
-    
+# --- ИГРА: РАКЕТА (X-МНОЖИТЕЛИ) ---
+@dp.callback_query(F.data == "game_rocket")
+async def rocket_start(callback: CallbackQuery):
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📝 Изменить приветствие", callback_data="set_welcome")],
-        [InlineKeyboardButton(text="💰 Награда за клик", callback_data="set_reward")],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="to_main")]
+        [InlineKeyboardButton(text="🚀 Низко (x1.5)", callback_data="fly_1.5")],
+        [InlineKeyboardButton(text="🚀 Средне (x2.0)", callback_data="fly_2.0")],
+        [InlineKeyboardButton(text="🚀 Высоко (x5.0)", callback_data="fly_5.0")],
+        [InlineKeyboardButton(text="🌌 В космос (x10.0)", callback_data="fly_10.0")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="all_games")]
     ])
-    
-    status = (f"⚙️ **НАСТРОЙКИ БОТА**\n\n"
-              f"Приветствие: `{bot_settings['welcome_text']}`\n"
-              f"Награда за клик: `{bot_settings['reward_amount']}`")
-    
-    await callback.message.edit_text(status, reply_markup=kb, parse_mode="Markdown")
-
-# Процесс смены приветствия
-@dp.callback_query(F.data == "set_welcome")
-async def set_welcome_step1(callback: CallbackQuery, state: FSMContext):
-    await callback.message.answer("Пришли новый текст приветствия:")
-    await state.set_state(SetupState.waiting_for_welcome)
-    await callback.answer()
-
-@dp.message(SetupState.waiting_for_welcome)
-async def set_welcome_step2(message: types.Message, state: FSMContext):
-    bot_settings["welcome_text"] = message.text
-    await message.answer(f"✅ Приветствие изменено на:\n_{message.text}_", parse_mode="Markdown")
-    await state.clear()
-
-# Процесс смены награды
-@dp.callback_query(F.data == "set_reward")
-async def set_reward_step1(callback: CallbackQuery, state: FSMContext):
-    await callback.message.answer("Введи число (сколько давать за 1 клик):")
-    await state.set_state(SetupState.waiting_for_reward)
-    await callback.answer()
-
-@dp.message(SetupState.waiting_for_reward)
-async def set_reward_step2(message: types.Message, state: FSMContext):
-    if message.text.isdigit():
-        bot_settings["reward_amount"] = int(message.text)
-        await message.answer(f"✅ Теперь за клик дают: {message.text}")
-        await state.clear()
-    else:
-        await message.answer("Ошибка! Введи только число.")
-
-# --- ОБЩИЕ ФУНКЦИИ ---
-@dp.callback_query(F.data == "to_main")
-async def to_main(callback: CallbackQuery):
     await callback.message.edit_text(
-        bot_settings["welcome_text"],
-        reply_markup=main_menu_kb(callback.from_user.id)
+        "🚀 **ЗАПУСК РАКЕТЫ**\n\nВыбери высоту полета. Чем выше, тем больше риск взрыва!",
+        reply_markup=kb,
+        parse_mode="Markdown"
     )
 
-async def main():
-    await bot.delete_webhook(drop_pending_updates=True)
-    print("🚀 Бот с онлайн-настройками запущен!")
-    await dp.start_polling(bot)
+@dp.callback_query(F.data.startswith("fly_"))
+async def rocket_fly(callback: CallbackQuery):
+    user = get_user(callback.from_user.id)
+    bet = 100  # Ставка за полет
+    
+    if user["balance"] < bet:
+        return await callback.answer("Недостаточно коинов! (Нужно 100)", show_alert=True)
+    
+    user["balance"] -= bet
+    multiplier = float(callback.data.split("_")[1])
+    
+    # Логика шанса: чем выше множитель, тем ниже шанс успеха
+    # x1.5 -> 70% шанс | x2 -> 45% | x5 -> 15% | x10 -> 5%
+    chance = 0
+    if multiplier == 1.5: chance = 70
+    elif multiplier == 2.0: chance = 45
+    elif multiplier == 5.0: chance = 15
+    elif multiplier == 10.0: chance = 5
 
-if __name__ == "__main__":
-    asyncio.run(main())
+    await callback.message.edit_text(f"🚀 Ракета взлетает на множитель **x{multiplier}**... 💨", parse_mode="Markdown")
+    await asyncio.sleep(2) # Эффект ожидания
+
+    if random.randint(1, 100) <= chance:
+        win_amount = int(bet * multiplier)
+        user["balance"] += win_amount
+        await callback.message.answer(f"✅ УСПЕХ! Ракета долетела! Твой выигрыш: **{win_amount}** коинов!", parse_mode="Markdown")
+    else:
+        await callback.message.answer(f"💥 БА-БАХ! Ракета взорвалась на полпути... Ты потерял {bet} коинов.")
+    
+    await all_games(callback)
