@@ -6,7 +6,7 @@ from aiogram.filters import Command
 from aiogram.enums import ParseMode
 
 # --- НАСТРОЙКИ ---
-TOKEN = "СЮДА_ВСТАВЬ_НОВЫЙ_ТОКЕН" # Сбрось его в @BotFather!
+TOKEN = "8156857401:AAHiNO7znRig1ttMSiJ3joAPHhUr--Z213g" # Сбрось его в @BotFather!
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
