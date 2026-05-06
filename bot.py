@@ -5,7 +5,7 @@ import sqlite3
 from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.types import BotCommand, BotCommandScopeDefault, ReplyKeyboardRemove
+from aiogram.types import BotCommand, BotCommandScopeDefault, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -15,7 +15,7 @@ MAIN_TOKEN = "8156857401:AAF9qTQLD1GbAXgef_IjX7f2glkLofVH0Wk"
 ADMIN_TOKEN = "8692818015:AAFr1AppqwvoF4lrmebWnWSaDgpAX7VB5LA"
 OWNER_ID = 8462392581 
 
-# Premium Emoji IDs
+# Premium Emoji ID
 PICKAXE_ID = "5197371802136892976"    
 MONEY_BAG_ID = "5206223871467878339"  
 CASH_ID = "5206599371868631162"       
@@ -24,13 +24,13 @@ SUPPORT_ID = "5924712865763170353"
 GIFT_ID = "5792071541084659564"       
 SHOP_ICON_ID = "5197269100878907942"  
 ERROR_EMOJI_ID = "5240241223632954241"
+# Медали
 MEDAL_1_ID = "5440539497383087970" 
 MEDAL_2_ID = "5447203607294265305" 
 MEDAL_3_ID = "5453902265922376865" 
 
 main_bot = Bot(token=MAIN_TOKEN)
 admin_bot = Bot(token=ADMIN_TOKEN)
-
 dp_main = Dispatcher()
 dp_admin = Dispatcher()
 
@@ -39,7 +39,7 @@ def init_db():
     conn = sqlite3.connect('miner_game.db')
     cur = conn.cursor()
     cur.execute('''CREATE TABLE IF NOT EXISTS players 
-                   (user_id INTEGER PRIMARY KEY, balance INTEGER, pick_lvl INTEGER, used_promos TEXT, last_bonus_time TEXT, username TEXT)''')
+                   (user_id INTEGER PRIMARY KEY, balance INTEGER, pick_lvl INTEGER, used_promos TEXT, username TEXT)''')
     cur.execute('''CREATE TABLE IF NOT EXISTS promo_codes 
                    (code TEXT PRIMARY KEY, reward INTEGER, expire_at TEXT)''')
     conn.commit()
@@ -57,38 +57,49 @@ def db_query(query, params=(), fetchone=False, fetchall=False, commit=False):
     return res
 
 def get_player(user_id, username=None):
-    data = db_query("SELECT balance, pick_lvl, used_promos, last_bonus_time FROM players WHERE user_id = ?", (user_id,), fetchone=True)
+    data = db_query("SELECT balance, pick_lvl, used_promos FROM players WHERE user_id = ?", (user_id,), fetchone=True)
     if not data:
-        db_query("INSERT INTO players VALUES (?, ?, ?, ?, ?, ?)", (user_id, 0, 1, "", None, username), commit=True)
-        return {"balance": 0, "pick_lvl": 1, "used_promos": [], "last_bonus_time": None}
+        db_query("INSERT INTO players (user_id, balance, pick_lvl, used_promos, username) VALUES (?, ?, ?, ?, ?)", 
+                 (user_id, 0, 1, "", username), commit=True)
+        return {"balance": 0, "pick_lvl": 1, "used_promos": []}
     if username:
         db_query("UPDATE players SET username = ? WHERE user_id = ?", (username, user_id), commit=True)
-    return {"balance": data[0], "pick_lvl": data[1], "used_promos": data[2].split(",") if data[2] else [], "last_bonus_time": data[3]}
+    return {"balance": data[0], "pick_lvl": data[1], "used_promos": data[2].split(",") if data[2] else []}
 
-# --- ЛОГИКА ИГРОВОГО БОТА ---
+# --- МАГАЗИН ---
+SHOP_PICKS = {
+    1: {"name": "Деревянная кирка", "price": 0, "mult": 1.0},
+    2: {"name": "Каменная кирка", "price": 5000, "mult": 1.5},
+    3: {"name": "Железная кирка", "price": 15000, "mult": 2.5},
+    4: {"name": "Золотая кирка", "price": 50000, "mult": 5.0},
+    5: {"name": "Алмазная кирка", "price": 150000, "mult": 10.0}
+}
+
+# --- ИГРОВАЯ ЛОГИКА ---
+
 @dp_main.message(Command("start"))
 async def main_start(message: types.Message):
     get_player(message.from_user.id, message.from_user.username)
     await message.answer(
-        f'<tg-emoji emoji-id="{PICKAXE_ID}">⛏</tg-emoji> <b>Добро пожаловать в Майнер бот</b>\nВсе функции доступны в меню команд.', 
-        reply_markup=ReplyKeyboardRemove(),
-        parse_mode="HTML"
+        f'<tg-emoji emoji-id="{PICKAXE_ID}">⛏</tg-emoji><b>Добро пожаловать в Майнер бот</b>\nИспользуй меню для игры.',
+        reply_markup=ReplyKeyboardRemove(), parse_mode="HTML"
     )
 
 @dp_main.message(Command("mine"))
 async def main_mine(message: types.Message):
+    p = get_player(message.from_user.id)
     wait_time = random.randint(5, 10)
     status_msg = await message.answer(f'<tg-emoji emoji-id="{PICKAXE_ID}">⛏</tg-emoji> <b>Копаем...</b>', parse_mode="HTML")
     await asyncio.sleep(wait_time)
     
-    reward = random.randint(100, 500)
+    multiplier = SHOP_PICKS.get(p["pick_lvl"], SHOP_PICKS[1])["mult"]
+    reward = int(random.randint(200, 700) * multiplier)
     db_query("UPDATE players SET balance = balance + ? WHERE user_id = ?", (reward, message.from_user.id), commit=True)
-    await status_msg.edit_text(f'<tg-emoji emoji-id="{MONEY_BAG_ID}">💰</tg-emoji> Накопал: <b>{reward}</b> монет!', parse_mode="HTML")
-
-@dp_main.message(Command("balance"))
-async def balance_cmd(message: types.Message):
-    p = get_player(message.from_user.id)
-    await message.answer(f'<tg-emoji emoji-id="{BALANCE_ID}">💳</tg-emoji> Баланс: <b>{p["balance"]}</b> монет', parse_mode="HTML")
+    
+    await status_msg.edit_text(
+        f'<tg-emoji emoji-id="{MONEY_BAG_ID}">💰</tg-emoji> <b>Успешная добыча!</b>\n Найдено: <b>{reward}</b> монет',
+        parse_mode="HTML"
+    )
 
 @dp_main.message(Command("top"))
 async def top_cmd(message: types.Message):
@@ -106,18 +117,21 @@ async def top_cmd(message: types.Message):
 
 @dp_main.message(Command("bonus"))
 async def bonus_cmd(message: types.Message):
-    reward = 500
-    db_query("UPDATE players SET balance = balance + ? WHERE user_id = ?", (reward, message.from_user.id), commit=True)
-    await message.answer(f'<tg-emoji emoji-id="{GIFT_ID}">🎁</tg-emoji> Бонус получен!', parse_mode="HTML")
+    gift = random.randint(100, 500)
+    db_query("UPDATE players SET balance = balance + ? WHERE user_id = ?", (gift, message.from_user.id), commit=True)
+    await message.answer(f'<tg-emoji emoji-id="{GIFT_ID}">🎁</tg-emoji> Вы получили <b>{gift}</b> монет!', parse_mode="HTML")
+
+@dp_main.message(Command("balance"))
+async def balance_cmd(message: types.Message):
+    p = get_player(message.from_user.id)
+    await message.answer(f'<tg-emoji emoji-id="{BALANCE_ID}">💳</tg-emoji> Баланс: <b>{p["balance"]}</b> монет', parse_mode="HTML")
 
 @dp_main.message(F.text)
 async def handle_promos(message: types.Message):
     if message.text.startswith('/'): return
     code = message.text.upper().strip()
     promo = db_query("SELECT reward FROM promo_codes WHERE code = ?", (code,), fetchone=True)
-    if not promo:
-        await message.reply(f'<tg-emoji emoji-id="{ERROR_EMOJI_ID}">🚫</tg-emoji> Промокод не существует!', parse_mode="HTML")
-    else:
+    if promo:
         p = get_player(message.from_user.id)
         if code in p["used_promos"]:
             await message.reply("❌ Уже использован!")
@@ -125,11 +139,13 @@ async def handle_promos(message: types.Message):
             p["used_promos"].append(code)
             db_query("UPDATE players SET balance = balance + ?, used_promos = ? WHERE user_id = ?", 
                      (promo[0], ",".join(p["used_promos"]), message.from_user.id), commit=True)
-            await message.reply(f'<tg-emoji emoji-id="{CASH_ID}">💵</tg-emoji> Промокод активирован!', parse_mode="HTML")
+            await message.reply(f"✅ Активировано! +<b>{promo[0]}</b> монет", parse_mode="HTML")
+    else:
+        await message.reply(f'<tg-emoji emoji-id="{ERROR_EMOJI_ID}">🚫</tg-emoji> Неверный код!', parse_mode="HTML")
 
+# --- ЗАПУСК ---
 async def main():
     init_db()
-    # Настройка меню (синяя кнопка "Меню")
     await main_bot.set_my_commands([
         BotCommand(command="/start", description="🏠 Меню"),
         BotCommand(command="/mine", description="⛏ Копать"),
