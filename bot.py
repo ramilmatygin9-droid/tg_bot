@@ -1,67 +1,71 @@
 import asyncio
 import logging
-from aiogram import Bot, Dispatcher, types, F
+import random
+from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 
 # Включаем логирование
 logging.basicConfig(level=logging.INFO)
 
-# Твой токен (ОПАСНО: лучше использовать переменные окружения на Railway)
+# Твой токен (лучше использовать переменные окружения на Railway)
 TOKEN = "8156857401:AAF9qTQLD1GbAXgef_IjX7f2glkLofVH0Wk"
+# Твой Premium ID из скриншота
+MONEY_EMOJI_ID = "5206599371868631162"
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# Простая база данных игроков
+# Временная база данных
 players = {}
 
 @dp.message(Command("start"))
-async def start_handler(message: types.Message):
-    user_id = message.from_user.id
-    if user_id not in players:
-        players[user_id] = {"name": message.from_user.first_name, "balance": 100}
-    
+async def start_cmd(message: types.Message):
     await message.answer(
-        f"🎮 Привет, {message.from_user.first_name}!\n\n"
-        "Ты в игре. Твой начальный баланс: 100 монет.\n"
+        "👋 **Добро пожаловать в Шахту!**\n\n"
         "Команды:\n"
-        "💰 /work — заработать монеты\n"
-        "🏆 /top — список богачей"
+        "⛏ /mine — начать копать (5-12 сек)\n"
+        "💰 /balance — проверить деньги",
+        parse_mode="Markdown"
     )
 
-@dp.message(Command("work"))
-async def work_handler(message: types.Message):
+@dp.message(Command("mine"))
+async def mine_cmd(message: types.Message):
     user_id = message.from_user.id
-    import random
-    
     if user_id not in players:
-        players[user_id] = {"name": message.from_user.first_name, "balance": 0}
-    
-    earn = random.randint(10, 50)
-    players[user_id]["balance"] += earn
-    
-    await message.reply(f"⛏ Ты поработал и получил {earn} монет!\nБаланс: {players[user_id]['balance']}")
+        players[user_id] = 0
 
-@dp.message(Command("top"))
-async def top_handler(message: types.Message):
-    if not players:
-        return await message.answer("Игроков пока нет!")
+    wait_time = random.randint(5, 12)
     
-    # Сортируем по балансу
-    sorted_players = sorted(players.values(), key=lambda x: x['balance'], reverse=True)[:10]
+    # Отправляем сообщение о начале работы
+    status_msg = await message.answer(f"🚧 Копаем... Подожди {wait_time} сек.")
     
-    text = "🏆 **Топ богачей чата:**\n\n"
-    for i, p in enumerate(sorted_players, 1):
-        text += f"{i}. {p['name']} — {p['balance']} 💰\n"
+    # Имитация работы
+    await bot.send_chat_action(message.chat.id, "typing")
+    await asyncio.sleep(wait_time)
     
-    await message.answer(text, parse_mode="Markdown")
+    # Генерируем награду
+    reward = random.randint(100, 500)
+    players[user_id] += reward
+    
+    # Удаляем старое сообщение и пишем результат с Премиум Эмодзи
+    await status_msg.delete()
+    
+    # Используем HTML для отображения кастомного эмодзи
+    await message.answer(
+        f'<tg-emoji emoji-id="{MONEY_EMOJI_ID}">💵</tg-emoji> <b>Добыча завершена!</b>\n'
+        f'━━━━━━━━━━━━━━\n'
+        f'💵 Ты заработал: <b>{reward}</b> монет\n'
+        f'📈 Твой баланс: <b>{players[user_id]}</b> монет',
+        parse_mode="HTML"
+    )
+
+@dp.message(Command("balance"))
+async def bal_cmd(message: types.Message):
+    balance = players.get(message.from_user.id, 0)
+    await message.answer(f"💰 Твой баланс: <b>{balance}</b> монет", parse_mode="HTML")
 
 async def main():
-    print("Бот запущен и готов к работе!")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        print("Бот выключен")
+    asyncio.run(main())
