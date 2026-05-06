@@ -3,7 +3,7 @@ import random
 import os
 from telebot.types import Message
 
-TOKEN = os.getenv("8156857401:AAGxshuoGT-sV6hgMfpnFmQAHF7BsAjINjk")  # Токен в переменных Railway
+TOKEN = os.getenv("8156857401:AAHiNO7znRig1ttMSiJ3joAPHhUr--Z213g")  # Токен в переменных Railway
 bot = telebot.TeleBot(TOKEN)
 
 # База игроков в памяти (для простоты). При перезапуске данные обнуляются.
