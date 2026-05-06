@@ -5,7 +5,7 @@ import sqlite3
 from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.types import BotCommand, BotCommandScopeDefault, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import BotCommand, BotCommandScopeDefault, ReplyKeyboardRemove
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -65,26 +65,17 @@ def get_player(user_id, username=None):
         db_query("UPDATE players SET username = ? WHERE user_id = ?", (username, user_id), commit=True)
     return {"balance": data[0], "pick_lvl": data[1], "used_promos": data[2].split(",") if data[2] else [], "last_bonus_time": data[3]}
 
-# --- КЛАВИАТУРА ---
-def main_kb():
-    kb = [
-        [KeyboardButton(text="⛏ Копать"), KeyboardButton(text="💰 Баланс")],
-        [KeyboardButton(text="🏆 Топ"), KeyboardButton(text="🎁 Бонус")],
-        [KeyboardButton(text="🛒 Магазин"), KeyboardButton(text="🎧 Поддержка")]
-    ]
-    return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
-
 # --- ЛОГИКА ИГРОВОГО БОТА ---
 @dp_main.message(Command("start"))
 async def main_start(message: types.Message):
     get_player(message.from_user.id, message.from_user.username)
+    # ReplyKeyboardRemove() убирает кнопки, если они были
     await message.answer(
-        f'<tg-emoji emoji-id="{PICKAXE_ID}">⛏</tg-emoji> <b>Добро пожаловать в Майнер бот</b>', 
-        reply_markup=main_kb(),
+        f'<tg-emoji emoji-id="{PICKAXE_ID}">⛏</tg-emoji> <b>Добро пожаловать в Майнер бот</b>\nИспользуй меню команд для игры.', 
+        reply_markup=ReplyKeyboardRemove(),
         parse_mode="HTML"
     )
 
-@dp_main.message(F.text == "⛏ Копать")
 @dp_main.message(Command("mine"))
 async def main_mine(message: types.Message):
     p = get_player(message.from_user.id, message.from_user.username)
@@ -96,13 +87,11 @@ async def main_mine(message: types.Message):
     db_query("UPDATE players SET balance = balance + ? WHERE user_id = ?", (reward, message.from_user.id), commit=True)
     await status_msg.edit_text(f'<tg-emoji emoji-id="{MONEY_BAG_ID}">💰</tg-emoji> Ты накопал <b>{reward}</b> монет!', parse_mode="HTML")
 
-@dp_main.message(F.text == "💰 Баланс")
 @dp_main.message(Command("balance"))
 async def balance_cmd(message: types.Message):
     p = get_player(message.from_user.id)
     await message.answer(f'<tg-emoji emoji-id="{BALANCE_ID}">💳</tg-emoji> Твой баланс: <b>{p["balance"]}</b> монет', parse_mode="HTML")
 
-@dp_main.message(F.text == "🏆 Топ")
 @dp_main.message(Command("top"))
 async def top_cmd(message: types.Message):
     top_players = db_query("SELECT username, balance, user_id FROM players ORDER BY balance DESC LIMIT 10", fetchall=True)
@@ -120,19 +109,17 @@ async def top_cmd(message: types.Message):
         text += f"{medal} {name} — <b>{balance}</b> монет\n"
     await message.answer(text, parse_mode="HTML")
 
-@dp_main.message(F.text == "🎁 Бонус")
 @dp_main.message(Command("bonus"))
 async def bonus_cmd(message: types.Message):
     reward = 500
     db_query("UPDATE players SET balance = balance + ? WHERE user_id = ?", (reward, message.from_user.id), commit=True)
     await message.answer(f'<tg-emoji emoji-id="{GIFT_ID}">🎁</tg-emoji> Бонус <b>{reward}</b> монет забран!', parse_mode="HTML")
 
-@dp_main.message(F.text == "🛒 Магазин")
 @dp_main.message(Command("shop"))
 async def shop_cmd(message: types.Message):
     await message.answer(f'<tg-emoji emoji-id="{SHOP_ICON_ID}">🛒</tg-emoji> <b>Магазин кирок скоро откроется!</b>', parse_mode="HTML")
 
-@dp_main.message(F.text == "🎧 Поддержка")
+@dp_main.message(Command("support"))
 async def support_cmd(message: types.Message):
     await message.answer(f'<tg-emoji emoji-id="{SUPPORT_ID}">🎧</tg-emoji> Связь с админом: @Ramilpopa_4', parse_mode="HTML")
 
@@ -153,7 +140,10 @@ async def main():
         BotCommand(command="/start", description="🏠 Меню"),
         BotCommand(command="/mine", description="⛏ Копать"),
         BotCommand(command="/top", description="🏆 Топ"),
-        BotCommand(command="/balance", description="💰 Баланс")
+        BotCommand(command="/balance", description="💰 Баланс"),
+        BotCommand(command="/bonus", description="🎁 Подарок"),
+        BotCommand(command="/shop", description="🛒 Магазин"),
+        BotCommand(command="/support", description="🎧 Поддержка")
     ], scope=BotCommandScopeDefault())
     await asyncio.gather(dp_main.start_polling(main_bot), dp_admin.start_polling(admin_bot))
 
