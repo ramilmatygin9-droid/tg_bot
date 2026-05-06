@@ -67,11 +67,7 @@ def get_player(user_id, username=None):
 @dp_admin.message(Command("start"))
 async def admin_start(message: types.Message):
     if message.from_user.id != OWNER_ID: return
-    await message.answer("🛠 <b>Панель управления промокодами</b>\n\n"
-                         "Команды:\n"
-                         "• <code>/add НАЗВАНИЕ СУММА ЧАСЫ</code>\n"
-                         "• <code>/del НАЗВАНИЕ</code>\n"
-                         "• <code>/list</code>", parse_mode="HTML")
+    await message.answer("🛠 <b>Панель управления промокодами</b>\n\n• <code>/add КОД СУММА ЧАСЫ</code>\n• <code>/del КОД</code>\n• <code>/list</code>", parse_mode="HTML")
 
 @dp_admin.message(Command("add"))
 async def admin_add(message: types.Message):
@@ -146,7 +142,13 @@ async def bonus_cmd(message: types.Message):
 async def shop_cmd(message: types.Message):
     p = get_player(message.from_user.id)
     kb = [[InlineKeyboardButton(text=f"{v['name']} — {v['price']} 💵", callback_data=f"buy_{k}")] for k, v in SHOP_PICKS.items() if k > p["pick_lvl"]]
+    kb.append([InlineKeyboardButton(text="🎫 Ввести промокод", callback_data="open_promo")])
     await message.answer(f'🛒 <b>Магазин кирок</b>\nТвоя кирка: {SHOP_PICKS[p["pick_lvl"]]["name"]}', reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode="HTML")
+
+@dp_main.callback_query(F.data == "open_promo")
+async def open_promo_cb(callback: types.CallbackQuery):
+    await callback.message.answer(f'<tg-emoji emoji-id="{SHOP_ICON_ID}">📝</tg-emoji> <b>Введите промокод в чат:</b>', parse_mode="HTML")
+    await callback.answer()
 
 @dp_main.callback_query(F.data.startswith("buy_"))
 async def buy_h(c: types.CallbackQuery):
@@ -173,7 +175,7 @@ async def bal_cmd(message: types.Message):
 async def handle_promos(message: types.Message):
     if message.text.startswith('/'): return
     code = message.text.upper().strip()
-    promo = db_query("SELECT reward, expire_at FROM promo_codes WHERE code = ?", (code,), fetchone=True)
+    promo = db_query("SELECT reward FROM promo_codes WHERE code = ?", (code,), fetchone=True)
     if promo:
         p = get_player(message.from_user.id)
         if code in p["used_promos"]: await message.reply("❌ Уже использовано.")
@@ -181,7 +183,8 @@ async def handle_promos(message: types.Message):
             p["used_promos"].append(code)
             db_query("UPDATE players SET balance = balance + ?, used_promos = ? WHERE user_id = ?", (promo[0], ",".join(p["used_promos"]), message.from_user.id), commit=True)
             await message.reply(f"✅ +{promo[0]} монет!")
-    else: await message.reply("🚫 Неверный код.")
+    else: 
+        await message.reply(f'<tg-emoji emoji-id="{ERROR_EMOJI_ID}">🚫</tg-emoji> Промокод не существует!', parse_mode="HTML")
 
 async def main():
     init_db()
@@ -190,7 +193,7 @@ async def main():
         BotCommand(command="/mine", description="⛏ Копать"),
         BotCommand(command="/shop", description="🛒 Магазин"),
         BotCommand(command="/top", description="🏆 Топ"),
-        BotCommand(command="/bonus", description="🎁 Бонус (24ч)"),
+        BotCommand(command="/bonus", description="🎁 Бонус"),
         BotCommand(command="/balance", description="💰 Баланс")
     ], scope=BotCommandScopeDefault())
     await asyncio.gather(dp_main.start_polling(main_bot), dp_admin.start_polling(admin_bot))
