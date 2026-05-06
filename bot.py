@@ -17,7 +17,7 @@ MONEY_BAG_ID = "5206223871467878339"
 CASH_ID = "5206599371868631162"       
 BALANCE_ID = "5924587830675249107"
 SUPPORT_ID = "5924712865763170353"
-HEART_ID = "5470092785094765546"  # Новое сердечко для приветствия
+HEART_ID = "5470092785094765546"
 
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
@@ -34,14 +34,12 @@ async def set_main_menu(bot: Bot):
     ]
     await bot.set_my_commands(main_menu_commands, scope=BotCommandScopeDefault())
 
-# --- ПРИВЕТСТВИЕ С СЕРДЦЕМ ---
+# --- ОБНОВЛЕННОЕ ПРИВЕТСТВИЕ ---
 @dp.message(Command("start"))
 async def start_cmd(message: types.Message):
-    user_name = message.from_user.first_name
     await message.answer(
-        f'<tg-emoji emoji-id="{HEART_ID}">❤️</tg-emoji> <b>Привет, {user_name}!</b>\n\n'
-        f'Рад видеть тебя в нашей шахте. Готов добывать сокровища?\n'
-        f'Жми /mine в меню или прямо здесь!',
+        f'<tg-emoji emoji-id="{PICKAXE_ID}">⛏</tg-emoji><b>Добро пожаловать в Майнер бот</b><tg-emoji emoji-id="{PICKAXE_ID}">⛏</tg-emoji>\n\n'
+        f'Используй /mine или меню чтобы начать копать руду',
         parse_mode="HTML"
     )
 
@@ -93,7 +91,7 @@ async def support_cmd(message: types.Message):
 
 async def main():
     await set_main_menu(bot)
-    print("Бот запущен!")
+    print("Майнер бот запущен!")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
