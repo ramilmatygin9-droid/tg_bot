@@ -26,13 +26,14 @@ INVENTORY_ID = "5431445210141852444"
 ERROR_EMOJI_ID = "5240241223632954241" 
 NOTEBOOK_ID = "5461019131329402505"    
 CHECK_MARK_ID = "5316939641503365999"
+STAR_TOP_ID = "5472256585323522641" # Тот самый новый эмодзи звезды
 
 # Медальки для ТОПа
 MEDAL_1_ID = "5440539497383087970"
 MEDAL_2_ID = "5447203607294265305"
 MEDAL_3_ID = "5453902265922376865"
 
-# Кристаллы и цены скупщика (включая премиум из скриншотов)
+# Кристаллы и цены скупщика
 CRYSTALS_DATA = {
     "Common": {"name": "Обычный кристалл", "id": "6269242583763913842", "rarity": "Обычный", "price": 1000},
     "Rare": {"name": "Редкий кристалл", "id": "6269061400568532047", "rarity": "Редкий", "price": 2500},
@@ -134,7 +135,6 @@ async def main_mine(message: types.Message):
     reward = int(random.randint(200, 600) * SHOP_PICKS[p["pick_lvl"]]["mult"])
     crystal_msg = ""
     
-    # Шанс выпадения кристаллов (включая премиум)
     if random.random() < 0.4:
         rand_val = random.random()
         if rand_val < 0.02: c_key = "Premium3"
@@ -192,7 +192,8 @@ async def sell_callback(c: types.CallbackQuery):
 @dp_main.message(Command("top"))
 async def top_cmd(message: types.Message):
     top = db_query("SELECT username, balance, user_id FROM players ORDER BY balance DESC LIMIT 10", fetchall=True)
-    text = "<b>🏆 Топ богачей:</b>\n\n"
+    # Используем новый эмодзи STAR_TOP_ID в заголовке ТОПа
+    text = f'<tg-emoji emoji-id="{STAR_TOP_ID}">✨</tg-emoji> <b>Топ богачей:</b>\n\n'
     for i, user in enumerate(top, 1):
         display_name = f"@{user[0]}" if user[0] else "Игрок"
         if i == 1: prefix = f'<tg-emoji emoji-id="{MEDAL_1_ID}">🥇</tg-emoji>'
@@ -234,3 +235,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
