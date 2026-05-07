@@ -27,12 +27,12 @@ ERROR_EMOJI_ID = "5240241223632954241"
 NOTEBOOK_ID = "5461019131329402505"    
 CHECK_MARK_ID = "5316939641503365999"
 
-# Медальки для ТОПа (Premium IDs из скриншотов)
+# Медальки для ТОПа
 MEDAL_1_ID = "5440539497383087970"
 MEDAL_2_ID = "5447203607294265305"
 MEDAL_3_ID = "5453902265922376865"
 
-# Кристаллы с редкостью (Premium IDs из скриншотов)
+# Кристаллы с редкостью
 CRYSTALS_DATA = {
     "Common": {"name": "Обычный кристалл", "id": "6269242583763913842", "rarity": "Обычный"},
     "Rare": {"name": "Редкий кристалл", "id": "6269061400568532047", "rarity": "Редкий"},
@@ -152,7 +152,7 @@ async def main_mine(message: types.Message):
         return await message.reply(f'<tg-emoji emoji-id="{ERROR_EMOJI_ID}">🚫</tg-emoji> <b>Вы уже находитесь в шахте!</b>\nДождитесь завершения работы.', parse_mode="HTML")
     
     active_miners.add(user_id)
-    p = get_player(user_id)
+    p = get_player(user_id, message.from_user.username)
     wait_time = random.randint(5, 10)
     status_msg = await message.answer(f'<tg-emoji emoji-id="{PICKAXE_ID}">⛏</tg-emoji> <b>Начинаем копать...</b>', parse_mode="HTML")
     
@@ -201,7 +201,8 @@ async def top_cmd(message: types.Message):
     top = db_query("SELECT username, balance, user_id FROM players ORDER BY balance DESC LIMIT 10", fetchall=True)
     text = "<b>🏆 Топ богачей:</b>\n\n"
     for i, user in enumerate(top, 1):
-        name = user[0] if user[0] else f"Игрок"
+        # Формируем имя: либо @username, либо просто "Игрок"
+        display_name = f"@{user[0]}" if user[0] else "Игрок"
         
         if i == 1:
             prefix = f'<tg-emoji emoji-id="{MEDAL_1_ID}">🥇</tg-emoji>'
@@ -212,7 +213,7 @@ async def top_cmd(message: types.Message):
         else:
             prefix = f"{i}."
             
-        text += f"{prefix} <b>{name}</b> — {user[1]}💰\n"
+        text += f"{prefix} <b>{display_name}</b> — {user[1]}💰\n"
     await message.answer(text, parse_mode="HTML")
 
 @dp_main.message(Command("inventory"))
