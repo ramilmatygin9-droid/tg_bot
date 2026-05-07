@@ -164,14 +164,13 @@ async def main_mine(message: types.Message):
     reward = int(random.randint(200, 600) * SHOP_PICKS[p["pick_lvl"]]["mult"])
     crystal_msg = ""
     
-    # Шанс выпадения кристаллов по редкости
     if random.random() < 0.4:
         rand_val = random.random()
-        if rand_val < 0.1: # 10% Сверхредкий
+        if rand_val < 0.1: 
             c_key = "SuperRare"
-        elif rand_val < 0.3: # 20% Редкий
+        elif rand_val < 0.3: 
             c_key = "Rare"
-        else: # Остальные 70% от шанса выпадения - Обычный
+        else: 
             c_key = "Common"
             
         crystal = CRYSTALS_DATA[c_key]
@@ -202,9 +201,8 @@ async def top_cmd(message: types.Message):
     top = db_query("SELECT username, balance, user_id FROM players ORDER BY balance DESC LIMIT 10", fetchall=True)
     text = "<b>🏆 Топ богачей:</b>\n\n"
     for i, user in enumerate(top, 1):
-        name = user[0] if user[0] else f"Игрок {user[2]}"
+        name = user[0] if user[0] else f"Игрок"
         
-        # Замена цифр на премиум-медальки
         if i == 1:
             prefix = f'<tg-emoji emoji-id="{MEDAL_1_ID}">🥇</tg-emoji>'
         elif i == 2:
