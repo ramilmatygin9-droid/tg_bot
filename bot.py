@@ -36,6 +36,9 @@ CRYSTALS_DATA = {
     "Diamond": {"name": "Алмаз", "id": "5319020412858825227"}
 }
 
+# Список пользователей, которые сейчас копают (защита от повтора)
+active_miners = set()
+
 main_bot = Bot(token=MAIN_TOKEN)
 admin_bot = Bot(token=ADMIN_TOKEN)
 dp_main = Dispatcher()
@@ -142,8 +145,16 @@ async def main_start(message: types.Message):
 
 @dp_main.message(Command("mine"))
 async def main_mine(message: types.Message):
-    p = get_player(message.from_user.id)
+    user_id = message.from_user.id
+    
+    # Проверка: не копает ли уже пользователь?
+    if user_id in active_miners:
+        return await message.reply(f'<tg-emoji emoji-id="{ERROR_EMOJI_ID}">🚫</tg-emoji> <b>Вы уже находитесь в шахте!</b>\nДождитесь завершения работы.', parse_mode="HTML")
+    
+    active_miners.add(user_id) # Блокируем команду
+    p = get_player(user_id)
     wait_time = random.randint(5, 10)
+    
     status_msg = await message.answer(f'<tg-emoji emoji-id="{PICKAXE_ID}">⛏</tg-emoji> <b>Начинаем копать...</b>', parse_mode="HTML")
     
     for s in range(wait_time, 0, -1):
@@ -158,10 +169,12 @@ async def main_mine(message: types.Message):
         c_key = random.choice(list(CRYSTALS_DATA.keys()))
         crystal = CRYSTALS_DATA[c_key]
         p["crystals"][c_key] = p["crystals"].get(c_key, 0) + 1
-        db_query("UPDATE players SET crystals = ? WHERE user_id = ?", (json.dumps(p["crystals"]), message.from_user.id), commit=True)
+        db_query("UPDATE players SET crystals = ? WHERE user_id = ?", (json.dumps(p["crystals"]), user_id), commit=True)
         crystal_msg = f'\n✨ Вы нашли кристалл: <tg-emoji emoji-id="{crystal["id"]}">💎</tg-emoji> <b>{crystal["name"]}</b>!'
 
-    db_query("UPDATE players SET balance = balance + ? WHERE user_id = ?", (reward, message.from_user.id), commit=True)
+    db_query("UPDATE players SET balance = balance + ? WHERE user_id = ?", (reward, user_id), commit=True)
+    
+    active_miners.remove(user_id) # Снимаем блокировку
     await status_msg.delete()
     await message.answer(f'<tg-emoji emoji-id="{MONEY_BAG_ID}">💰</tg-emoji> <b>Результат:</b>\n+ {reward} монет{crystal_msg}', parse_mode="HTML")
 
@@ -250,7 +263,7 @@ async def promo_cmd(message: types.Message, command: CommandObject):
         
         await message.reply(
             f'<tg-emoji emoji-id="{CHECK_MARK_ID}">✅</tg-emoji> <b>Промокод успешно активирован!</b>\n'
-            f'💰 Вам начислено: <b>{promo[0]}</b> монет.', 
+            f'<tg-emoji emoji-id="{MONEY_BAG_ID}">💰</tg-emoji> Вам начислено: <b>{promo[0]}</b> монет.', 
             parse_mode="HTML"
         )
     else: 
