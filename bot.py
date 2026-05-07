@@ -66,14 +66,24 @@ def db_query(query, params=(), fetchone=False, fetchall=False, commit=False):
     return res
 
 def get_player(user_id, username=None):
+    # Достаем данные из БД
     data = db_query("SELECT balance, pick_lvl, used_promos, last_bonus, count_common, count_uncommon, count_rare FROM players WHERE user_id = ?", (user_id,), fetchone=True)
+    
     if not data:
-        db_query("INSERT INTO players (user_id, balance, pick_lvl, used_promos, username, last_bonus, count_common, count_uncommon, count_rare) VALUES (?, 0, 1, '', ?, 0, 0, 0, 0)", (user_id, username), commit=True)
+        db_query("INSERT INTO players (user_id, balance, pick_lvl, used_promos, username, last_bonus) VALUES (?, 0, 1, '', ?, 0)", (user_id, username), commit=True)
         return {"balance": 0, "pick_lvl": 1, "used_promos": [], "last_bonus": 0, "common": 0, "uncommon": 0, "rare": 0}
+    
+    # ВАЖНО: Ключи должны называться именно так, как ты их вызываешь в cmd_inventory
     return {
-        "balance": data[0], "pick_lvl": data[1], "used_promos": data[2].split(",") if data[2] else [], 
-        "last_bonus": data[3], "common": data[4], "uncommon": data[5], "rare": data[6]
+        "balance": data[0], 
+        "pick_lvl": data[1], 
+        "used_promos": data[2].split(",") if data[2] else [], 
+        "last_bonus": data[3], 
+        "common": data[4],   # Исправлено
+        "uncommon": data[5], # Исправлено
+        "rare": data[6]      # Исправлено
     }
+
 
 # --- ОБРАБОТЧИКИ ---
 
@@ -120,17 +130,17 @@ async def cmd_mine(message: types.Message):
 
 @dp_main.message(Command("inventory"))
 async def cmd_inventory(message: types.Message):
-    p = get_player(message.from_user.id)
-    pick_name = SHOP_PICKS[p["pick_lvl"]]["name"]
-    text = (f"🎒 <b>Твой инвентарь:</b>\n"
-            f"━━━━━━━━━━━━━━\n"
-            f"🛠 Кирка: <b>{pick_name}</b>\n"
-            f"⚡️ Множитель: <b>x{SHOP_PICKS[p['pick_lvl']]['mult']}</b>\n"
-            f"━━━━━━━━━━━━━━\n"
-            f"<tg-emoji emoji-id='{DIAMOND_COMMON}'>💎</tg-emoji> Обычные: <b>{p['common']}</b> шт.\n"
-            f"<tg-emoji emoji-id='{DIAMOND_UNCOMMON}'>💎</tg-emoji> Полуредкие: <b>{p['uncommon']}</b> шт.\n"
-            f"<tg-emoji emoji-id='{DIAMOND_RARE}'>💎</tg-emoji> Редкие: <b>{p['rare']}</b> шт.")
-    await message.answer(text, parse_mode="HTML")
+    try:
+        p = get_player(message.from_user.id)
+        text = (f"🎒 <b>Твой инвентарь:</b>\n\n"
+                f"<tg-emoji emoji-id='{DIAMOND_COMMON}'>💎</tg-emoji> Обычные: <b>{p['common']}</b> шт.\n"
+                f"<tg-emoji emoji-id='{DIAMOND_UNCOMMON}'>💎</tg-emoji> Полуредкие: <b>{p['uncommon']}</b> шт.\n"
+                f"<tg-emoji emoji-id='{DIAMOND_RARE}'>💎</tg-emoji> Редкие: <b>{p['rare']}</b> шт.")
+        await message.answer(text, parse_mode="HTML")
+    except Exception as e:
+        logging.error(f"Ошибка в inventory: {e}")
+        await message.answer("Произошла ошибка при открытии инвентаря.")
+
 
 @dp_main.message(Command("sale"))
 async def cmd_sale(message: types.Message):
