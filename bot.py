@@ -9,7 +9,8 @@ from aiogram.filters import Command, CommandObject
 from aiogram.types import BotCommand, InlineKeyboardMarkup, InlineKeyboardButton
 
 # --- КОНФИГУРАЦИЯ ---
-MAIN_TOKEN = "8156857401:AAF9qTQLD1GbAXgef_IjX7f2glkLofVH0Wk"
+# Твой новый токен
+MAIN_TOKEN = "8359920618:AAE4fi9nt5rZCihjYNuhVZxzEuvwPKjiDbk"
 OWNER_ID = 8462392581 
 
 # Эмодзи и Кастомные ID
@@ -104,7 +105,7 @@ async def admin_list(message: types.Message):
         res += f"• <code>{c}</code> | {r}💰 | До: {t}\n"
     await message.answer(res, parse_mode="HTML")
 
-# --- ИГРОВЫЕ КОМАНДЫ (СТАРЫЕ ТЕКСТЫ) ---
+# --- ИГРОВЫЕ КОМАНДЫ ---
 
 @dp_main.message(Command("start"))
 async def cmd_start(message: types.Message):
