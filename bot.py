@@ -17,21 +17,19 @@ MAIN_TOKEN = "8156857401:AAF9qTQLD1GbAXgef_IjX7f2glkLofVH0Wk"
 ADMIN_TOKEN = "8359920618:AAE4fi9nt5rZCihjYNuhVZxzEuvwPKjiDbk" 
 OWNER_ID = 8462392581 
 
-# Эмодзи и Кастомные ID
+# Эмодзи и Кастомные ID (из твоих скриншотов)
 PICKAXE_ID = "5197371802136892976"    
 MONEY_BAG_ID = "5206223871467878339"  
 BALANCE_ID = "5924587830675249107"    
 GIFT_ID = "5792071541084659564"       
-SHOP_ICON_ID = "5197269100878907942"
-ERROR_EMOJI_ID = "5240241223632954241"
-SKUPSHIK_ID = "5452136652111620778" 
+SKUPSHIK_ID = "5452136652111620778"   # 🤓
 
-# Алмазы
+# Алмазы (ID из JSON дампов)
 DIAMOND_COMMON = "6269061400568532047"  
 DIAMOND_UNCOMMON = "626938354888535501" 
 DIAMOND_RARE = "6269242583763913842"     
 
-# ЦЕНЫ НА КИРКИ (ДОРОГИЕ)
+# ЦЕНЫ НА КИРКИ
 SHOP_PICKS = {
     1: {"name": "Деревянная кирка", "price": 0, "mult": 1.0},
     2: {"name": "Каменная кирка", "price": 25000, "mult": 1.5},
@@ -85,10 +83,8 @@ def get_player(user_id, username=None):
         "last_bonus": data[3], "common": data[4], "uncommon": data[5], "rare": data[6]
     }
 
-# --- ИГРОВОЙ БОТ (МЕНЮ) ---
-
-@dp_main.message(Command("menu"))
-@dp_main.message(Command("start"))
+# --- МЕНЮ ---
+@dp_main.message(Command("start"), Command("menu"))
 async def main_menu(message: types.Message):
     get_player(message.from_user.id, message.from_user.username)
     kb = [
@@ -109,39 +105,61 @@ async def main_menu(message: types.Message):
         parse_mode="HTML"
     )
 
-# --- ОБРАБОТКА КНОПОК ---
-@dp_main.callback_query(F.data == "mine_action")
-async def cb_mine(c: types.CallbackQuery):
-    await c.answer()
-    await main_mine(c.message)
+# --- ЛОГИКА КОПАНИЯ (СТАРЫЙ ТЕКСТ) ---
+@dp_main.message(Command("mine"))
+async def main_mine(message: types.Message):
+    p = get_player(message.chat.id)
+    wait_time = random.randint(5, 12)
+    status_msg = await message.answer(f'<tg-emoji emoji-id="{PICKAXE_ID}">⛏</tg-emoji> <b>Копаем...</b>\n⏳ Осталось: <b>{wait_time}</b> сек.', parse_mode="HTML")
+    
+    # Старая анимация
+    for s in range(wait_time - 1, -1, -1):
+        await asyncio.sleep(1)
+        try:
+            await status_msg.edit_text(f'<tg-emoji emoji-id="{PICKAXE_ID}">⛏</tg-emoji> <b>Работа кипит!</b>\n⏳ Осталось: <b>{s}</b> сек.', parse_mode="HTML")
+        except:
+            pass
+    
+    luck = random.random()
+    diamond_text = ""
+    if luck < 0.05:
+        db_query("UPDATE players SET count_rare = count_rare + 1 WHERE user_id = ?", (message.chat.id,), commit=True)
+        diamond_text = f'\n<tg-emoji emoji-id="{DIAMOND_RARE}">💎</tg-emoji> <b>В инвентарь добавлен: Редкий алмаз!</b>'
+    elif luck < 0.15:
+        db_query("UPDATE players SET count_uncommon = count_uncommon + 1 WHERE user_id = ?", (message.chat.id,), commit=True)
+        diamond_text = f'\n<tg-emoji emoji-id="{DIAMOND_UNCOMMON}">💎</tg-emoji> <b>В инвентарь добавлен: Полуредкий алмаз!</b>'
+    elif luck < 0.40:
+        db_query("UPDATE players SET count_common = count_common + 1 WHERE user_id = ?", (message.chat.id,), commit=True)
+        diamond_text = f'\n<tg-emoji emoji-id="{DIAMOND_COMMON}">💎</tg-emoji> <b>В инвентарь добавлен: Обычный алмаз!</b>'
 
-@dp_main.callback_query(F.data == "inv_action")
-async def cb_inv(c: types.CallbackQuery):
-    await c.answer()
-    await inventory_cmd(c.message)
+    reward = int(random.randint(200, 700) * SHOP_PICKS[p["pick_lvl"]]["mult"])
+    db_query("UPDATE players SET balance = balance + ? WHERE user_id = ?", (reward, message.chat.id), commit=True)
+    
+    await status_msg.delete()
+    await message.answer(f'<tg-emoji emoji-id="{MONEY_BAG_ID}">💰</tg-emoji> Добыто: <b>{reward}</b> монет{diamond_text}', parse_mode="HTML")
 
-@dp_main.callback_query(F.data == "sell_action")
-async def cb_sell(c: types.CallbackQuery):
-    await c.answer()
-    await sell_diamonds(c.message)
+# --- ИНВЕНТАРЬ И ПРОДАЖА ---
+@dp_main.message(Command("inv"))
+async def inventory_cmd(message: types.Message):
+    p = get_player(message.chat.id)
+    text = (f"🎒 <b>Твой инвентарь:</b>\n\n"
+            f"<tg-emoji emoji-id='{DIAMOND_COMMON}'>💎</tg-emoji> Обычные: <b>{p['common']}</b> шт.\n"
+            f"<tg-emoji emoji-id='{DIAMOND_UNCOMMON}'>💎</tg-emoji> Полуредкие: <b>{p['uncommon']}</b> шт.\n"
+            f"<tg-emoji emoji-id='{DIAMOND_RARE}'>💎</tg-emoji> Редкие: <b>{p['rare']}</b> шт.\n\n"
+            f"Чтобы продать всё, нажми /sell")
+    await message.answer(text, parse_mode="HTML")
 
-@dp_main.callback_query(F.data == "bonus_action")
-async def cb_bonus(c: types.CallbackQuery):
-    await c.answer()
-    await bonus_cmd(c.message)
+@dp_main.message(Command("sell"))
+async def sell_diamonds(message: types.Message):
+    p = get_player(message.chat.id)
+    total = (p['common'] * 1000) + (p['uncommon'] * 5000) + (p['rare'] * 15000)
+    if total == 0:
+        await message.answer(f"<tg-emoji emoji-id='{SKUPSHIK_ID}'>🤓</tg-emoji> У тебя нет камней на продажу!")
+        return
+    db_query("UPDATE players SET balance = balance + ?, count_common=0, count_uncommon=0, count_rare=0 WHERE user_id = ?", (total, message.chat.id), commit=True)
+    await message.answer(f"<tg-emoji emoji-id='{SKUPSHIK_ID}'>🤓</tg-emoji> Скупщик купил всё за <b>{total:,}</b> монет!", parse_mode="HTML")
 
-@dp_main.callback_query(F.data == "shop_action")
-async def cb_shop(c: types.CallbackQuery):
-    await c.answer()
-    await shop_cmd(c.message)
-
-@dp_main.callback_query(F.data == "bal_action")
-async def cb_bal(c: types.CallbackQuery):
-    await c.answer()
-    await bal_cmd(c.message)
-
-# --- ЛОГИКА ---
-
+# --- БОНУС, БАЛАНС, МАГАЗИН ---
 @dp_main.message(Command("bonus"))
 async def bonus_cmd(message: types.Message):
     p = get_player(message.chat.id)
@@ -154,50 +172,28 @@ async def bonus_cmd(message: types.Message):
     db_query("UPDATE players SET balance = balance + ?, last_bonus = ? WHERE user_id = ?", (gift, now, message.chat.id), commit=True)
     await message.answer(f'<tg-emoji emoji-id="{GIFT_ID}">🎁</tg-emoji> Бонус: <b>{gift}</b> монет!', parse_mode="HTML")
 
-@dp_main.message(Command("mine"))
-async def main_mine(message: types.Message):
-    p = get_player(message.chat.id)
-    status_msg = await message.answer(f'<tg-emoji emoji-id="{PICKAXE_ID}">⛏</tg-emoji> <b>Копаем...</b>', parse_mode="HTML")
-    await asyncio.sleep(random.randint(5, 10))
-    luck = random.random()
-    diamond_text = ""
-    if luck < 0.05:
-        db_query("UPDATE players SET count_rare = count_rare + 1 WHERE user_id = ?", (message.chat.id,), commit=True)
-        diamond_text = f'\n<tg-emoji emoji-id="{DIAMOND_RARE}">💎</tg-emoji> <b>Редкий алмаз!</b>'
-    elif luck < 0.15:
-        db_query("UPDATE players SET count_uncommon = count_uncommon + 1 WHERE user_id = ?", (message.chat.id,), commit=True)
-        diamond_text = f'\n<tg-emoji emoji-id="{DIAMOND_UNCOMMON}">💎</tg-emoji> <b>Полуредкий алмаз!</b>'
-    
-    reward = int(random.randint(200, 700) * SHOP_PICKS[p["pick_lvl"]]["mult"])
-    db_query("UPDATE players SET balance = balance + ? WHERE user_id = ?", (reward, message.chat.id), commit=True)
-    await status_msg.delete()
-    await message.answer(f'<tg-emoji emoji-id="{MONEY_BAG_ID}">💰</tg-emoji> +<b>{reward}</b> монет{diamond_text}', parse_mode="HTML")
-
-@dp_main.message(Command("inv"))
-async def inventory_cmd(message: types.Message):
-    p = get_player(message.chat.id)
-    await message.answer(f"🎒 <b>Инвентарь:</b>\n\nОбычные: {p['common']}\nПолуредкие: {p['uncommon']}\nРедкие: {p['rare']}", parse_mode="HTML")
-
-@dp_main.message(Command("sell"))
-async def sell_diamonds(message: types.Message):
-    p = get_player(message.chat.id)
-    total = (p['common'] * 1000) + (p['uncommon'] * 5000) + (p['rare'] * 15000)
-    if total == 0:
-        await message.answer("🤓 У тебя пусто!")
-        return
-    db_query("UPDATE players SET balance = balance + ?, count_common=0, count_uncommon=0, count_rare=0 WHERE user_id = ?", (total, message.chat.id), commit=True)
-    await message.answer(f"<tg-emoji emoji-id='{SKUPSHIK_ID}'>🤓</tg-emoji> Продано за <b>{total}</b> монет!", parse_mode="HTML")
-
 @dp_main.message(Command("balance"))
 async def bal_cmd(message: types.Message):
     p = get_player(message.chat.id)
-    await message.answer(f'<tg-emoji emoji-id="{BALANCE_ID}">💳</tg-emoji> Баланс: <b>{p["balance"]}</b>', parse_mode="HTML")
+    await message.answer(f'<tg-emoji emoji-id="{BALANCE_ID}">💳</tg-emoji> Баланс: <b>{p["balance"]:,}</b>', parse_mode="HTML")
 
 @dp_main.message(Command("shop"))
 async def shop_cmd(message: types.Message):
     p = get_player(message.chat.id)
     kb = [[InlineKeyboardButton(text=f"{v['name']} — {v['price']:,} 💵", callback_data=f"buy_{k}")] for k, v in SHOP_PICKS.items() if k > p["pick_lvl"]]
-    await message.answer(f'🛒 <b>Магазин</b>', reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode="HTML")
+    await message.answer(f'🛒 <b>Магазин кирок</b>', reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode="HTML")
+
+# --- ОБРАБОТКА CALLBACK ---
+@dp_main.callback_query(F.data.endswith("_action"))
+async def handle_actions(c: types.CallbackQuery):
+    action = c.data.split("_")[0]
+    await c.answer()
+    if action == "mine": await main_mine(c.message)
+    elif action == "inv": await inventory_cmd(c.message)
+    elif action == "sell": await sell_diamonds(c.message)
+    elif action == "bonus": await bonus_cmd(c.message)
+    elif action == "shop": await shop_cmd(c.message)
+    elif action == "bal": await bal_cmd(c.message)
 
 @dp_main.callback_query(F.data.startswith("buy_"))
 async def buy_h(c: types.CallbackQuery):
@@ -208,27 +204,11 @@ async def buy_h(c: types.CallbackQuery):
         await c.message.edit_text(f"✅ Куплено: {SHOP_PICKS[lvl]['name']}!")
     else: await c.answer("Недостаточно монет!", show_alert=True)
 
-# --- АДМИНКА ---
-@dp_admin.message(Command("start"))
-async def admin_start(message: types.Message):
-    if message.from_user.id != OWNER_ID: return
-    await message.answer("🛠 Админ-панель\n/add КОД СУММА ВРЕМЯ")
-
-@dp_admin.message(Command("add"))
-async def admin_add(message: types.Message):
-    if message.from_user.id != OWNER_ID: return
-    try:
-        args = message.text.split()
-        code, reward, time_str = args[1].upper(), int(args[2]), args[3].lower()
-        expire_dt = datetime.now() + (timedelta(minutes=int(re.search(r'\d+', time_str).group())) if 'm' in time_str else timedelta(hours=int(re.search(r'\d+', time_str).group())))
-        expire = expire_dt.strftime("%Y-%m-%d %H:%M:%S")
-        db_query("INSERT OR REPLACE INTO promo_codes VALUES (?, ?, ?)", (code, reward, expire), commit=True)
-        await message.answer(f"✅ Код {code} создан!")
-    except: await message.answer("Ошибка!")
-
+# --- ЗАПУСК ---
 async def main():
     init_db()
     await asyncio.gather(dp_main.start_polling(main_bot), dp_admin.start_polling(admin_bot))
 
 if __name__ == "__main__":
     asyncio.run(main())
+
