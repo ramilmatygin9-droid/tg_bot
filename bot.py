@@ -72,29 +72,37 @@ def get_player(user_id, username=None):
     if not data:
         db_query("INSERT INTO players (user_id, balance, pick_lvl, used_promos, username, last_bonus) VALUES (?, 0, 1, '', ?, 0)", (user_id, username), commit=True)
         return {"balance": 0, "pick_lvl": 1, "used_promos": [], "last_bonus": 0, "common": 0, "uncommon": 0, "rare": 0}
+    
+    # Обновляем юзернейм при каждом входе
+    if username:
+        db_query("UPDATE players SET username = ? WHERE user_id = ?", (username, user_id), commit=True)
+        
     return {
         "balance": data[0], "pick_lvl": data[1], "used_promos": data[2].split(",") if data[2] else [], 
-        "last_bonus": data[3], 
-        "common": data[4],   # Исправлено для работы инвентаря
-        "uncommon": data[5], # Исправлено для работы инвентаря
-        "rare": data[6]      # Исправлено для работы инвентаря
+        "last_bonus": data[3], "common": data[4], "uncommon": data[5], "rare": data[6]
     }
 
 # --- ОБРАБОТЧИКИ ---
 
 @dp_main.message(Command("start"))
 async def cmd_start(message: types.Message):
-    get_player(message.from_user.id, message.from_user.username)
+    p = get_player(message.from_user.id, message.from_user.username)
+    pick = SHOP_PICKS[p["pick_lvl"]]
+    
     welcome_text = (
-        f'<tg-emoji emoji-id="{PICKAXE_ID}">⛏</tg-emoji> Привет, <b>{message.from_user.first_name}</b>! Ты попал в симулятор майнера.\n\n'
-        f'<b>Твои команды:</b>\n'
-        f'⛏ /mine — Копать руду\n'
-        f'🎒 /inventory — Твои ресурсы\n'
-        f'🛒 /shop — Купить кирку\n'
-        f'💳 /balance — Мой счет\n'
-        f'🤓 /sale — Продать алмазы\n'
-        f'🎁 /bonus — Ежедневный подарок\n'
-        f'🏆 /top — Рейтинг игроков'
+        f"<b>⛏ ДОБРО ПОЖАЛОВАТЬ В MINER SIMULATOR ⛏</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"👋 Привет, <b>@{message.from_user.username or message.from_user.first_name}</b>!\n\n"
+        f"⚙️ <b>Твое снаряжение:</b>\n"
+        f"└ Кирка: <code>{pick['name']}</code>\n"
+        f"└ Множитель: <code>x{pick['mult']}</code>\n\n"
+        f"🎒 <b>Твой инвентарь:</b>\n"
+        f"<tg-emoji emoji-id='{DIAMOND_COMMON}'>💎</tg-emoji> Обычные: <b>{p['common']}</b>\n"
+        f"<tg-emoji emoji-id='{DIAMOND_UNCOMMON}'>💎</tg-emoji> Редкие: <b>{p['uncommon']}</b>\n"
+        f"<tg-emoji emoji-id='{DIAMOND_RARE}'>💎</tg-emoji> Эпик: <b>{p['rare']}</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"💰 Баланс: <b>{p['balance']:,}</b> монет\n\n"
+        f"⛏ Копай через /mine и стань лучшим!"
     )
     await message.answer(welcome_text, parse_mode="HTML")
 
@@ -155,9 +163,10 @@ async def cmd_shop(message: types.Message):
 @dp_main.message(Command("top"))
 async def cmd_top(message: types.Message):
     top_players = db_query("SELECT username, balance FROM players ORDER BY balance DESC LIMIT 10", fetchall=True)
-    text = "🏆 <b>Топ 10 богатых майнеров:</b>\n\n"
+    text = "🏆 <b>ТОП 10 МАЙНЕРОВ:</b>\n━━━━━━━━━━━━━━\n"
     for i, (name, bal) in enumerate(top_players, 1):
-        text += f"{i}. {name or 'Аноним'} — 💰 <b>{bal:,}</b>\n"
+        user_display = f"@{name}" if name else "Аноним"
+        text += f"{i}. <b>{user_display}</b> — 💰 <code>{bal:,}</code>\n"
     await message.answer(text, parse_mode="HTML")
 
 @dp_main.message(Command("bonus"))
@@ -190,8 +199,8 @@ async def buy_h(c: types.CallbackQuery):
 # --- ЗАПУСК ---
 async def main():
     init_db()
-    # Установка списка команд
     await main_bot.set_my_commands([
+        BotCommand(command="start", description="🏠 Главная"),
         BotCommand(command="mine", description="⛏ Копать"),
         BotCommand(command="shop", description="🛒 Магазин"),
         BotCommand(command="top", description="🏆 Топ"),
