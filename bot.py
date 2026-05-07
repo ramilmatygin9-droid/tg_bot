@@ -27,6 +27,7 @@ ERROR_EMOJI_ID = "5240241223632954241"
 MEDAL_1_ID = "5440539497383087970" 
 MEDAL_2_ID = "5447203607294265305" 
 MEDAL_3_ID = "5453902265922376865" 
+INVENTORY_ID = "5431445210141852444"
 
 main_bot = Bot(token=MAIN_TOKEN)
 admin_bot = Bot(token=ADMIN_TOKEN)
@@ -38,7 +39,7 @@ def init_db():
     conn = sqlite3.connect('miner_game.db')
     cur = conn.cursor()
     cur.execute('''CREATE TABLE IF NOT EXISTS players 
-                   (user_id INTEGER PRIMARY KEY, balance INTEGER, pick_lvl INTEGER, used_promos TEXT, username TEXT, last_bonus INTEGER DEFAULT 0)''')
+                   (user_id INTEGER PRIMARY KEY, balance INTEGER, pick_lvl INTEGER, used_promos TEXT, username TEXT, last_bonus INTEGER DEFAULT 0, inventory TEXT DEFAULT '1')''')
     cur.execute('''CREATE TABLE IF NOT EXISTS promo_codes 
                    (code TEXT PRIMARY KEY, reward INTEGER, expire_at TEXT)''')
     conn.commit()
@@ -54,13 +55,19 @@ def db_query(query, params=(), fetchone=False, fetchall=False, commit=False):
     return res
 
 def get_player(user_id, username=None):
-    data = db_query("SELECT balance, pick_lvl, used_promos, last_bonus FROM players WHERE user_id = ?", (user_id,), fetchone=True)
+    data = db_query("SELECT balance, pick_lvl, used_promos, last_bonus, inventory FROM players WHERE user_id = ?", (user_id,), fetchone=True)
     if not data:
-        db_query("INSERT INTO players (user_id, balance, pick_lvl, used_promos, username) VALUES (?, 0, 1, '', ?)", (user_id, username), commit=True)
-        return {"balance": 0, "pick_lvl": 1, "used_promos": [], "last_bonus": 0}
+        db_query("INSERT INTO players (user_id, balance, pick_lvl, used_promos, username, inventory) VALUES (?, 0, 1, '', ?, '1')", (user_id, username), commit=True)
+        return {"balance": 0, "pick_lvl": 1, "used_promos": [], "last_bonus": 0, "inventory": [1]}
     if username:
         db_query("UPDATE players SET username = ? WHERE user_id = ?", (username, user_id), commit=True)
-    return {"balance": data[0], "pick_lvl": data[1], "used_promos": data[2].split(",") if data[2] else [], "last_bonus": data[3]}
+    return {
+        "balance": data[0], 
+        "pick_lvl": data[1], 
+        "used_promos": data[2].split(",") if data[2] else [], 
+        "last_bonus": data[3],
+        "inventory": [int(x) for x in data[4].split(",")] if data[4] else [1]
+    }
 
 # --- АДМИН-БОТ ---
 
@@ -152,7 +159,10 @@ async def shop_cmd(message: types.Message):
 async def buy_h(c: types.CallbackQuery):
     lvl, p = int(c.data.split("_")[1]), get_player(c.from_user.id)
     if p["balance"] >= SHOP_PICKS[lvl]["price"]:
-        db_query("UPDATE players SET balance = balance - ?, pick_lvl = ? WHERE user_id = ?", (SHOP_PICKS[lvl]["price"], lvl, c.from_user.id), commit=True)
+        new_inv = p["inventory"]
+        if lvl not in new_inv: new_inv.append(lvl)
+        inv_str = ",".join(map(str, sorted(new_inv)))
+        db_query("UPDATE players SET balance = balance - ?, pick_lvl = ?, inventory = ? WHERE user_id = ?", (SHOP_PICKS[lvl]["price"], lvl, inv_str, c.from_user.id), commit=True)
         await c.message.edit_text(f"✅ Куплено: {SHOP_PICKS[lvl]['name']}!")
     else: await c.answer("Недостаточно монет!", show_alert=True)
 
@@ -169,7 +179,16 @@ async def bal_cmd(message: types.Message):
     p = get_player(message.from_user.id)
     await message.answer(f'<tg-emoji emoji-id="{BALANCE_ID}">💳</tg-emoji> Баланс: <b>{p["balance"]}</b>', parse_mode="HTML")
 
-# --- НОВЫЙ ОБРАБОТЧИК ПРОМОКОДА ---
+@dp_main.message(Command("inventory"))
+async def inventory_cmd(message: types.Message):
+    p = get_player(message.from_user.id)
+    text = f'<tg-emoji emoji-id="{INVENTORY_ID}">🎒</tg-emoji> <b>Ваш инвентарь:</b>\n\n'
+    for lvl in sorted(p["inventory"]):
+        pick = SHOP_PICKS[lvl]
+        status = " (Экипировано ✅)" if lvl == p["pick_lvl"] else ""
+        text += f"• {pick['name']} [x{pick['mult']}]{status}\n"
+    await message.answer(text, parse_mode="HTML")
+
 @dp_main.message(Command("promo"))
 async def promo_cmd(message: types.Message, command: CommandObject):
     if not command.args:
@@ -195,6 +214,7 @@ async def main():
         BotCommand(command="/start", description="🏠 Меню"),
         BotCommand(command="/mine", description="⛏ Копать"),
         BotCommand(command="/shop", description="🛒 Магазин"),
+        BotCommand(command="/inventory", description="🎒 Инвентарь"),
         BotCommand(command="/top", description="🏆 Топ"),
         BotCommand(command="/bonus", description="🎁 Бонус (24ч)"),
         BotCommand(command="/balance", description="💰 Баланс"),
