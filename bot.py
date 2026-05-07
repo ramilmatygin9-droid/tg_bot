@@ -88,7 +88,11 @@ def get_player(user_id, username=None):
 @dp_main.message(Command("start"))
 async def old_start(message: types.Message):
     get_player(message.from_user.id, message.from_user.username)
-    await message.answer(f"Привет, {message.from_user.first_name}! Ты попал в симулятор майнера.\nИспользуй /mine чтобы начать копать!")
+    await message.answer(
+        f'<tg-emoji emoji-id="{PICKAXE_ID}">⛏</tg-emoji> Привет, {message.from_user.first_name}! Ты попал в симулятор майнера.\n'
+        f'Используй /mine чтобы начать копать!',
+        parse_mode="HTML"
+    )
 
 @dp_main.message(Command("menu"))
 async def main_menu(message: types.Message):
