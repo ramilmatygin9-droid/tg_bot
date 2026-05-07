@@ -42,9 +42,7 @@ SHOP_PICKS = {
 }
 
 main_bot = Bot(token=MAIN_TOKEN)
-admin_bot = Bot(token=ADMIN_TOKEN)
 dp_main = Dispatcher()
-dp_admin = Dispatcher()
 
 # --- БАЗА ДАННЫХ ---
 def init_db():
@@ -112,7 +110,7 @@ async def cmd_start(message: types.Message):
 
 @dp_main.message(Command("mine"))
 async def cmd_mine(message: types.Message):
-    p = get_player(message.chat.id)
+    p = get_player(message.from_user.id)
     wait_time = random.randint(5, 12)
     status_msg = await message.answer(f'<tg-emoji emoji-id="{PICKAXE_ID}">⛏</tg-emoji> <b>Копаем...</b>\n⏳ Осталось: <b>{wait_time}</b> сек.', parse_mode="HTML")
     
@@ -125,17 +123,17 @@ async def cmd_mine(message: types.Message):
     luck = random.random()
     diamond_text = ""
     if luck < 0.05:
-        db_query("UPDATE players SET count_rare = count_rare + 1 WHERE user_id = ?", (message.chat.id,), commit=True)
+        db_query("UPDATE players SET count_rare = count_rare + 1 WHERE user_id = ?", (message.from_user.id,), commit=True)
         diamond_text = f'\n<tg-emoji emoji-id="{DIAMOND_RARE}">💎</tg-emoji> <b>Редкий алмаз!</b>'
     elif luck < 0.15:
-        db_query("UPDATE players SET count_uncommon = count_uncommon + 1 WHERE user_id = ?", (message.chat.id,), commit=True)
+        db_query("UPDATE players SET count_uncommon = count_uncommon + 1 WHERE user_id = ?", (message.from_user.id,), commit=True)
         diamond_text = f'\n<tg-emoji emoji-id="{DIAMOND_UNCOMMON}">💎</tg-emoji> <b>Полуредкий алмаз!</b>'
     elif luck < 0.40:
-        db_query("UPDATE players SET count_common = count_common + 1 WHERE user_id = ?", (message.chat.id,), commit=True)
+        db_query("UPDATE players SET count_common = count_common + 1 WHERE user_id = ?", (message.from_user.id,), commit=True)
         diamond_text = f'\n<tg-emoji emoji-id="{DIAMOND_COMMON}">💎</tg-emoji> <b>Обычный алмаз!</b>'
 
     reward = int(random.randint(200, 700) * SHOP_PICKS[p["pick_lvl"]]["mult"])
-    db_query("UPDATE players SET balance = balance + ? WHERE user_id = ?", (reward, message.chat.id), commit=True)
+    db_query("UPDATE players SET balance = balance + ? WHERE user_id = ?", (reward, message.from_user.id), commit=True)
     await status_msg.delete()
     await message.answer(f'<tg-emoji emoji-id="{MONEY_BAG_ID}">💰</tg-emoji> Добыто: <b>{reward}</b> монет{diamond_text}', parse_mode="HTML")
 
@@ -162,6 +160,9 @@ async def cmd_sale(message: types.Message):
 async def cmd_shop(message: types.Message):
     p = get_player(message.from_user.id)
     kb = [[InlineKeyboardButton(text=f"{v['name']} — {v['price']:,} 💵", callback_data=f"buy_{k}")] for k, v in SHOP_PICKS.items() if k > p["pick_lvl"]]
+    if not kb:
+        await message.answer("У тебя уже самая лучшая кирка! 🏆")
+        return
     await message.answer(f'🛒 <b>Магазин кирок</b>', reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode="HTML")
 
 @dp_main.message(Command("top"))
@@ -170,13 +171,10 @@ async def cmd_top(message: types.Message):
     text = "🏆 <b>ТОП 10 МАЙНЕРОВ:</b>\n━━━━━━━━━━━━━━\n"
     for i, (name, bal) in enumerate(top_players, 1):
         user_display = f"@{name}" if name else "Аноним"
-        
-        # Премиум кубки для топ 1, 2, 3
         prefix = f"{i}."
         if i == 1: prefix = f"<tg-emoji emoji-id='{CUP_GOLD}'>🥇</tg-emoji>"
         elif i == 2: prefix = f"<tg-emoji emoji-id='{CUP_SILVER}'>🥈</tg-emoji>"
         elif i == 3: prefix = f"<tg-emoji emoji-id='{CUP_BRONZE}'>🥉</tg-emoji>"
-        
         text += f"{prefix} <b>{user_display}</b> — 💰 <code>{bal:,}</code>\n"
     await message.answer(text, parse_mode="HTML")
 
@@ -197,7 +195,6 @@ async def cmd_balance(message: types.Message):
     p = get_player(message.from_user.id)
     await message.answer(f'<tg-emoji emoji-id="{BALANCE_ID}">💳</tg-emoji> Баланс: <b>{p["balance"]:,}</b>', parse_mode="HTML")
 
-# --- CALLBACKS ---
 @dp_main.callback_query(F.data.startswith("buy_"))
 async def buy_h(c: types.CallbackQuery):
     lvl = int(c.data.split("_")[1])
@@ -210,6 +207,9 @@ async def buy_h(c: types.CallbackQuery):
 # --- ЗАПУСК ---
 async def main():
     init_db()
+    # КРИТИЧЕСКИ ВАЖНО: удаляем вебхуки и старые апдейты
+    await main_bot.delete_webhook(drop_pending_updates=True)
+    
     await main_bot.set_my_commands([
         BotCommand(command="start", description="🏠 Главная"),
         BotCommand(command="mine", description="⛏ Копать"),
@@ -220,7 +220,11 @@ async def main():
         BotCommand(command="sale", description="💎 Скупщик"),
         BotCommand(command="inventory", description="🎒 Инвентарь")
     ])
+    logging.info("СТАРТ БОТА...")
     await dp_main.start_polling(main_bot)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass
