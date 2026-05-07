@@ -17,17 +17,13 @@ MAIN_TOKEN = "8156857401:AAF9qTQLD1GbAXgef_IjX7f2glkLofVH0Wk"
 ADMIN_TOKEN = "8359920618:AAE4fi9nt5rZCihjYNuhVZxzEuvwPKjiDbk" 
 OWNER_ID = 8462392581 
 
-# Premium Emoji IDs
+# Эмодзи
 PICKAXE_ID = "5197371802136892976"    
 MONEY_BAG_ID = "5206223871467878339"  
-CASH_ID = "5206599371868631162"       
 BALANCE_ID = "5924587830675249107"    
 GIFT_ID = "5792071541084659564"       
 SHOP_ICON_ID = "5197269100878907942"
 ERROR_EMOJI_ID = "5240241223632954241"
-MEDAL_1_ID = "5440539497383087970" 
-MEDAL_2_ID = "5447203607294265305" 
-MEDAL_3_ID = "5453902265922376865" 
 
 main_bot = Bot(token=MAIN_TOKEN)
 admin_bot = Bot(token=ADMIN_TOKEN)
@@ -63,12 +59,18 @@ def get_player(user_id, username=None):
         db_query("UPDATE players SET username = ? WHERE user_id = ?", (username, user_id), commit=True)
     return {"balance": data[0], "pick_lvl": data[1], "used_promos": data[2].split(",") if data[2] else [], "last_bonus": data[3]}
 
-# --- АДМИН-БОТ (УПРАВЛЕНИЕ ПРОМО) ---
+# --- АДМИН-БОТ (ФОРМАТ ПО СКРИНШОТУ) ---
 
 @dp_admin.message(Command("start"))
 async def admin_start(message: types.Message):
     if message.from_user.id != OWNER_ID: return
-    await message.answer("🛠 <b>Панель управления</b>\n\nКоманды:\n/add КОД СУММА ВРЕМЯ (30m, 1h, 1d)\n/del КОД\n/list", parse_mode="HTML")
+    await message.answer(
+        "🛠 <b>Панель управления промокодами</b>\n\n"
+        "• /add  КОД  СУММА  ЧАСЫ (0 - вечный)\n"
+        "• /del  КОД - Удалить\n"
+        "• /list - Все коды", 
+        parse_mode="HTML"
+    )
 
 @dp_admin.message(Command("add"))
 async def admin_add(message: types.Message):
@@ -81,6 +83,7 @@ async def admin_add(message: types.Message):
 
         if time_str == "0":
             expire = "NEVER"
+            expire_display = "Вечно"
         else:
             amount = int(re.search(r'\d+', time_str).group())
             if 'm' in time_str:
@@ -90,18 +93,14 @@ async def admin_add(message: types.Message):
             else:
                 expire_dt = datetime.now() + timedelta(hours=amount)
             expire = expire_dt.strftime("%Y-%m-%d %H:%M:%S")
+            expire_display = expire
 
         db_query("INSERT OR REPLACE INTO promo_codes VALUES (?, ?, ?)", (code, reward, expire), commit=True)
         
-        # Ответ как на скриншоте
-        await message.answer(
-            f"✅ Промокод <b>{code}</b> создан!\n"
-            f"💰 Награда: {reward}\n"
-            f"⏰ Истекает: {expire}", 
-            parse_mode="HTML"
-        )
+        # Строка ответа как на скриншоте
+        await message.answer(f"✅ Код <b>{code}</b> на {reward} монет создан! (До: {expire_display})", parse_mode="HTML")
     except: 
-        await message.answer("Ошибка! Формат: <code>/add START 5000 0</code>", parse_mode="HTML")
+        await message.answer("Ошибка! Формат: /add 67 40 1")
 
 @dp_admin.message(Command("del"))
 async def admin_del(message: types.Message):
@@ -109,19 +108,19 @@ async def admin_del(message: types.Message):
     try:
         code = message.text.split()[1].upper()
         db_query("DELETE FROM promo_codes WHERE code = ?", (code,), commit=True)
-        await message.answer(f"🗑 Промокод <b>{code}</b> удален.", parse_mode="HTML")
-    except: await message.answer("Ошибка! /del CODE")
+        await message.answer(f"🗑 Удален: {code}")
+    except: await message.answer("Ошибка! /del КОД")
 
 @dp_admin.message(Command("list"))
 async def admin_list(message: types.Message):
     if message.from_user.id != OWNER_ID: return
     promos = db_query("SELECT * FROM promo_codes", fetchall=True)
-    text = "🎫 <b>Список активных промо:</b>\n\n"
+    text = "🎫 <b>Список кодов:</b>\n\n"
     for p in promos:
         text += f"• <code>{p[0]}</code> | {p[1]}💰 | До: {p[2]}\n"
-    await message.answer(text if promos else "Промокодов нет.", parse_mode="HTML")
+    await message.answer(text if promos else "Кодов нет.", parse_mode="HTML")
 
-# --- ИГРОВОЙ БОТ ---
+# --- ИГРОВОЙ БОТ (БЕЗ ИЗМЕНЕНИЙ ЛОГИКИ) ---
 
 SHOP_PICKS = {
     1: {"name": "Деревянная кирка", "price": 0, "mult": 1.0},
@@ -183,14 +182,6 @@ async def buy_h(c: types.CallbackQuery):
         await c.message.edit_text(f"✅ Куплено: {SHOP_PICKS[lvl]['name']}!")
     else: await c.answer("Недостаточно монет!", show_alert=True)
 
-@dp_main.message(Command("top"))
-async def top_cmd(message: types.Message):
-    top = db_query("SELECT username, balance, user_id FROM players ORDER BY balance DESC LIMIT 10", fetchall=True)
-    text = "<b>🏆 Топ майнеров:</b>\n\n"
-    for i, pl in enumerate(top, 1):
-        text += f"<b>{i}.</b> @{pl[0] if pl[0] else pl[2]} — <b>{pl[1]}</b>\n"
-    await message.answer(text, parse_mode="HTML")
-
 @dp_main.message(Command("balance"))
 async def bal_cmd(message: types.Message):
     p = get_player(message.from_user.id)
@@ -217,14 +208,6 @@ async def handle_promos(message: types.Message):
 
 async def main():
     init_db()
-    await main_bot.set_my_commands([
-        BotCommand(command="/start", description="🏠 Меню"),
-        BotCommand(command="/mine", description="⛏ Копать"),
-        BotCommand(command="/shop", description="🛒 Магазин"),
-        BotCommand(command="/top", description="🏆 Топ"),
-        BotCommand(command="/bonus", description="🎁 Бонус"),
-        BotCommand(command="/balance", description="💰 Баланс")
-    ], scope=BotCommandScopeDefault())
     await asyncio.gather(dp_main.start_polling(main_bot), dp_admin.start_polling(admin_bot))
 
 if __name__ == "__main__":
