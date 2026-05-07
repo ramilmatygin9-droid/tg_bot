@@ -83,13 +83,13 @@ def get_player(user_id, username=None):
         "last_bonus": data[3], "common": data[4], "uncommon": data[5], "rare": data[6]
     }
 
-# --- СТАРЫЙ START (БЕЗ МЕНЮ) ---
+# --- КОМАНДЫ ---
+
 @dp_main.message(Command("start"))
 async def old_start(message: types.Message):
     get_player(message.from_user.id, message.from_user.username)
     await message.answer(f"Привет, {message.from_user.first_name}! Ты попал в симулятор майнера.\nИспользуй /mine чтобы начать копать!")
 
-# --- ГЛАВНОЕ МЕНЮ (ПО КОМАНДЕ /MENU) ---
 @dp_main.message(Command("menu"))
 async def main_menu(message: types.Message):
     kb = [
@@ -110,7 +110,6 @@ async def main_menu(message: types.Message):
         parse_mode="HTML"
     )
 
-# --- ЛОГИКА КОПАНИЯ ---
 @dp_main.message(Command("mine"))
 async def main_mine(message: types.Message):
     p = get_player(message.chat.id)
@@ -142,7 +141,6 @@ async def main_mine(message: types.Message):
     await status_msg.delete()
     await message.answer(f'<tg-emoji emoji-id="{MONEY_BAG_ID}">💰</tg-emoji> Добыто: <b>{reward}</b> монет{diamond_text}', parse_mode="HTML")
 
-# --- ОСТАЛЬНЫЕ КОМАНДЫ ---
 @dp_main.message(Command("inv"))
 async def inventory_cmd(message: types.Message):
     p = get_player(message.chat.id)
@@ -186,7 +184,7 @@ async def bonus_cmd(message: types.Message):
     db_query("UPDATE players SET balance = balance + ?, last_bonus = ? WHERE user_id = ?", (gift, now, message.chat.id), commit=True)
     await message.answer(f'<tg-emoji emoji-id="{GIFT_ID}">🎁</tg-emoji> Бонус: <b>{gift}</b> монет!', parse_mode="HTML")
 
-# --- ОБРАБОТКА CALLBACK ---
+# --- CALLBACKS ---
 @dp_main.callback_query(F.data.endswith("_action"))
 async def handle_actions(c: types.CallbackQuery):
     action = c.data.split("_")[0]
@@ -214,3 +212,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
