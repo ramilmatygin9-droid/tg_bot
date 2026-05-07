@@ -3,6 +3,7 @@ import logging
 import random
 import sqlite3
 import time
+import re
 from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
@@ -67,18 +68,38 @@ def get_player(user_id, username=None):
 @dp_admin.message(Command("start"))
 async def admin_start(message: types.Message):
     if message.from_user.id != OWNER_ID: return
-    await message.answer("🛠 <b>Панель управления промокодами</b>\n\n• <code>/add КОД СУММА ЧАСЫ</code>\n• <code>/del КОД</code>\n• <code>/list</code>", parse_mode="HTML")
+    await message.answer("🛠 <b>Панель управления промокодами</b>\n\n"
+                         "Команды:\n"
+                         "• <code>/add КОД СУММА ВРЕМЯ</code>\n"
+                         "Примеры времени: <code>30m</code>, <code>2h</code>, <code>1d</code> (0 - вечный)\n"
+                         "• <code>/del КОД</code>\n"
+                         "• <code>/list</code>", parse_mode="HTML")
 
 @dp_admin.message(Command("add"))
 async def admin_add(message: types.Message):
     if message.from_user.id != OWNER_ID: return
     try:
         args = message.text.split()
-        code, reward, hours = args[1].upper(), int(args[2]), int(args[3])
-        expire = "NEVER" if hours == 0 else (datetime.now() + timedelta(hours=hours)).strftime("%Y-%m-%d %H:%M:%S")
+        code = args[1].upper()
+        reward = int(args[2])
+        time_str = args[3].lower()
+
+        if time_str == "0":
+            expire = "NEVER"
+        else:
+            amount = int(re.search(r'\d+', time_str).group())
+            if 'm' in time_str:
+                expire_dt = datetime.now() + timedelta(minutes=amount)
+            elif 'd' in time_str:
+                expire_dt = datetime.now() + timedelta(days=amount)
+            else: # по умолчанию часы (h)
+                expire_dt = datetime.now() + timedelta(hours=amount)
+            expire = expire_dt.strftime("%Y-%m-%d %H:%M:%S")
+
         db_query("INSERT OR REPLACE INTO promo_codes VALUES (?, ?, ?)", (code, reward, expire), commit=True)
-        await message.answer(f"✅ Промокод <b>{code}</b> создан!", parse_mode="HTML")
-    except: await message.answer("Ошибка! /add CODE 5000 24")
+        await message.answer(f"✅ Промокод <b>{code}</b> создан!\n💰 Награда: {reward}\n⏰ Истекает: {expire}", parse_mode="HTML")
+    except: 
+        await message.answer("Ошибка! Пример: <code>/add TEST 5000 30m</code> (или 1h, 1d)")
 
 @dp_admin.message(Command("del"))
 async def admin_del(message: types.Message):
@@ -93,7 +114,7 @@ async def admin_del(message: types.Message):
 async def admin_list(message: types.Message):
     if message.from_user.id != OWNER_ID: return
     promos = db_query("SELECT * FROM promo_codes", fetchall=True)
-    text = "🎫 <b>Промокоды:</b>\n" + "\n".join([f"• {p[0]} | {p[1]}💰" for p in promos])
+    text = "🎫 <b>Промокоды:</b>\n" + "\n".join([f"• {p[0]} | {p[1]}💰 | До: {p[2]}" for p in promos])
     await message.answer(text if promos else "Пусто.", parse_mode="HTML")
 
 # --- ИГРОВОЙ БОТ ---
@@ -175,14 +196,23 @@ async def bal_cmd(message: types.Message):
 async def handle_promos(message: types.Message):
     if message.text.startswith('/'): return
     code = message.text.upper().strip()
-    promo = db_query("SELECT reward FROM promo_codes WHERE code = ?", (code,), fetchone=True)
+    promo = db_query("SELECT reward, expire_at FROM promo_codes WHERE code = ?", (code,), fetchone=True)
     if promo:
+        reward, expire_at = promo
         p = get_player(message.from_user.id)
-        if code in p["used_promos"]: await message.reply("❌ Уже использовано.")
+        
+        # Проверка срока действия
+        if expire_at != "NEVER":
+            if datetime.now() > datetime.strptime(expire_at, "%Y-%m-%d %H:%M:%S"):
+                await message.reply(f'<tg-emoji emoji-id="{ERROR_EMOJI_ID}">🚫</tg-emoji> Срок действия промокода истек!', parse_mode="HTML")
+                return
+
+        if code in p["used_promos"]: 
+            await message.reply("❌ Уже использовано.")
         else:
             p["used_promos"].append(code)
-            db_query("UPDATE players SET balance = balance + ?, used_promos = ? WHERE user_id = ?", (promo[0], ",".join(p["used_promos"]), message.from_user.id), commit=True)
-            await message.reply(f"✅ +{promo[0]} монет!")
+            db_query("UPDATE players SET balance = balance + ?, used_promos = ? WHERE user_id = ?", (reward, ",".join(p["used_promos"]), message.from_user.id), commit=True)
+            await message.reply(f"✅ +{reward} монет!")
     else: 
         await message.reply(f'<tg-emoji emoji-id="{ERROR_EMOJI_ID}">🚫</tg-emoji> Промокод не существует!', parse_mode="HTML")
 
