@@ -27,6 +27,11 @@ DIAMOND_COMMON = "6269061400568532047"
 DIAMOND_UNCOMMON = "626938354888535501" 
 DIAMOND_RARE = "6269242583763913842"     
 
+# Премиум кубки для ТОПа
+CUP_GOLD = "5318821943825154339"
+CUP_SILVER = "5318991475512453472"
+CUP_BRONZE = "5319114256245863261"
+
 # ЦЕНЫ НА КИРКИ
 SHOP_PICKS = {
     1: {"name": "Деревянная кирка", "price": 0, "mult": 1.0},
@@ -73,7 +78,6 @@ def get_player(user_id, username=None):
         db_query("INSERT INTO players (user_id, balance, pick_lvl, used_promos, username, last_bonus) VALUES (?, 0, 1, '', ?, 0)", (user_id, username), commit=True)
         return {"balance": 0, "pick_lvl": 1, "used_promos": [], "last_bonus": 0, "common": 0, "uncommon": 0, "rare": 0}
     
-    # Обновляем юзернейм при каждом входе
     if username:
         db_query("UPDATE players SET username = ? WHERE user_id = ?", (username, user_id), commit=True)
         
@@ -90,7 +94,7 @@ async def cmd_start(message: types.Message):
     pick = SHOP_PICKS[p["pick_lvl"]]
     
     welcome_text = (
-        f"<b>⛏ ДОБРО ПОЖАЛОВАТЬ В MINER SIMULATOR ⛏</b>\n"
+        f"<b><tg-emoji emoji-id='{PICKAXE_ID}'>⛏</tg-emoji> ДОБРО ПОЖАЛОВАТЬ В MINER SIMULATOR <tg-emoji emoji-id='{PICKAXE_ID}'>⛏</tg-emoji></b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
         f"👋 Привет, <b>@{message.from_user.username or message.from_user.first_name}</b>!\n\n"
         f"⚙️ <b>Твое снаряжение:</b>\n"
@@ -166,7 +170,14 @@ async def cmd_top(message: types.Message):
     text = "🏆 <b>ТОП 10 МАЙНЕРОВ:</b>\n━━━━━━━━━━━━━━\n"
     for i, (name, bal) in enumerate(top_players, 1):
         user_display = f"@{name}" if name else "Аноним"
-        text += f"{i}. <b>{user_display}</b> — 💰 <code>{bal:,}</code>\n"
+        
+        # Премиум кубки для топ 1, 2, 3
+        prefix = f"{i}."
+        if i == 1: prefix = f"<tg-emoji emoji-id='{CUP_GOLD}'>🥇</tg-emoji>"
+        elif i == 2: prefix = f"<tg-emoji emoji-id='{CUP_SILVER}'>🥈</tg-emoji>"
+        elif i == 3: prefix = f"<tg-emoji emoji-id='{CUP_BRONZE}'>🥉</tg-emoji>"
+        
+        text += f"{prefix} <b>{user_display}</b> — 💰 <code>{bal:,}</code>\n"
     await message.answer(text, parse_mode="HTML")
 
 @dp_main.message(Command("bonus"))
