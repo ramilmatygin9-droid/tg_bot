@@ -27,16 +27,18 @@ ERROR_EMOJI_ID = "5240241223632954241"
 NOTEBOOK_ID = "5461019131329402505"    
 CHECK_MARK_ID = "5316939641503365999"
 
-# Кристаллы (Premium IDs)
+# Медальки для ТОПа (Premium IDs из скриншотов)
+MEDAL_1_ID = "5440539497383087970"
+MEDAL_2_ID = "5447203607294265305"
+MEDAL_3_ID = "5453902265922376865"
+
+# Кристаллы с редкостью (Premium IDs из скриншотов)
 CRYSTALS_DATA = {
-    "Quartz": {"name": "Кварц", "id": "5318933215233212450"},
-    "Emerald": {"name": "Изумруд", "id": "5318925527258524300"},
-    "Ruby": {"name": "Рубин", "id": "5318713437101038573"},
-    "Sapphire": {"name": "Сапфир", "id": "5318790074282875151"},
-    "Diamond": {"name": "Алмаз", "id": "5319020412858825227"}
+    "Common": {"name": "Обычный кристалл", "id": "6269242583763913842", "rarity": "Обычный"},
+    "Rare": {"name": "Редкий кристалл", "id": "6269061400568532047", "rarity": "Редкий"},
+    "SuperRare": {"name": "Сверхредкий кристалл", "id": "6269383548885535501", "rarity": "Сверхредкий"}
 }
 
-# Список пользователей, которые сейчас копают (защита от повтора)
 active_miners = set()
 
 main_bot = Bot(token=MAIN_TOKEN)
@@ -146,15 +148,12 @@ async def main_start(message: types.Message):
 @dp_main.message(Command("mine"))
 async def main_mine(message: types.Message):
     user_id = message.from_user.id
-    
-    # Проверка: не копает ли уже пользователь?
     if user_id in active_miners:
         return await message.reply(f'<tg-emoji emoji-id="{ERROR_EMOJI_ID}">🚫</tg-emoji> <b>Вы уже находитесь в шахте!</b>\nДождитесь завершения работы.', parse_mode="HTML")
     
-    active_miners.add(user_id) # Блокируем команду
+    active_miners.add(user_id)
     p = get_player(user_id)
     wait_time = random.randint(5, 10)
-    
     status_msg = await message.answer(f'<tg-emoji emoji-id="{PICKAXE_ID}">⛏</tg-emoji> <b>Начинаем копать...</b>', parse_mode="HTML")
     
     for s in range(wait_time, 0, -1):
@@ -163,18 +162,25 @@ async def main_mine(message: types.Message):
         except: pass
         
     reward = int(random.randint(200, 600) * SHOP_PICKS[p["pick_lvl"]]["mult"])
-    
     crystal_msg = ""
+    
+    # Шанс выпадения кристаллов по редкости
     if random.random() < 0.4:
-        c_key = random.choice(list(CRYSTALS_DATA.keys()))
+        rand_val = random.random()
+        if rand_val < 0.1: # 10% Сверхредкий
+            c_key = "SuperRare"
+        elif rand_val < 0.3: # 20% Редкий
+            c_key = "Rare"
+        else: # Остальные 70% от шанса выпадения - Обычный
+            c_key = "Common"
+            
         crystal = CRYSTALS_DATA[c_key]
         p["crystals"][c_key] = p["crystals"].get(c_key, 0) + 1
         db_query("UPDATE players SET crystals = ? WHERE user_id = ?", (json.dumps(p["crystals"]), user_id), commit=True)
-        crystal_msg = f'\n✨ Вы нашли кристалл: <tg-emoji emoji-id="{crystal["id"]}">💎</tg-emoji> <b>{crystal["name"]}</b>!'
+        crystal_msg = f'\n✨ Вы нашли кристалл: <tg-emoji emoji-id="{crystal["id"]}">💎</tg-emoji> <b>{crystal["name"]}</b> ({crystal["rarity"]})!'
 
     db_query("UPDATE players SET balance = balance + ? WHERE user_id = ?", (reward, user_id), commit=True)
-    
-    active_miners.remove(user_id) # Снимаем блокировку
+    active_miners.remove(user_id)
     await status_msg.delete()
     await message.answer(f'<tg-emoji emoji-id="{MONEY_BAG_ID}">💰</tg-emoji> <b>Результат:</b>\n+ {reward} монет{crystal_msg}', parse_mode="HTML")
 
@@ -189,6 +195,38 @@ async def crystals_cmd(message: types.Message):
             if count > 0:
                 c = CRYSTALS_DATA[key]
                 text += f'<tg-emoji emoji-id="{c["id"]}">💎</tg-emoji> {c["name"]}: <b>{count}</b> шт.\n'
+    await message.answer(text, parse_mode="HTML")
+
+@dp_main.message(Command("top"))
+async def top_cmd(message: types.Message):
+    top = db_query("SELECT username, balance, user_id FROM players ORDER BY balance DESC LIMIT 10", fetchall=True)
+    text = "<b>🏆 Топ богачей:</b>\n\n"
+    for i, user in enumerate(top, 1):
+        name = user[0] if user[0] else f"Игрок {user[2]}"
+        
+        # Замена цифр на премиум-медальки
+        if i == 1:
+            prefix = f'<tg-emoji emoji-id="{MEDAL_1_ID}">🥇</tg-emoji>'
+        elif i == 2:
+            prefix = f'<tg-emoji emoji-id="{MEDAL_2_ID}">🥈</tg-emoji>'
+        elif i == 3:
+            prefix = f'<tg-emoji emoji-id="{MEDAL_3_ID}">🥉</tg-emoji>'
+        else:
+            prefix = f"{i}."
+            
+        text += f"{prefix} <b>{name}</b> — {user[1]}💰\n"
+    await message.answer(text, parse_mode="HTML")
+
+@dp_main.message(Command("inventory"))
+async def inv_cmd(message: types.Message):
+    p = get_player(message.from_user.id)
+    if len(p["inventory"]) <= 1 and p["inventory"][0] == 1:
+        text = f'<tg-emoji emoji-id="{ERROR_EMOJI_ID}">🚫</tg-emoji> <b>У вас нету ничего в инвентаре!</b>'
+    else:
+        text = f'<tg-emoji emoji-id="{INVENTORY_ID}">🎒</tg-emoji> <b>Инвентарь:</b>\n'
+        for lvl in sorted(p["inventory"]):
+            status = " (Экипировано)" if lvl == p["pick_lvl"] else ""
+            text += f"• {SHOP_PICKS[lvl]['name']}{status}\n"
     await message.answer(text, parse_mode="HTML")
 
 @dp_main.message(Command("shop"))
@@ -214,27 +252,6 @@ async def bal_cmd(message: types.Message):
     p = get_player(message.from_user.id)
     await message.answer(f'<tg-emoji emoji-id="{BALANCE_ID}">💳</tg-emoji> Баланс: <b>{p["balance"]}</b>', parse_mode="HTML")
 
-@dp_main.message(Command("inventory"))
-async def inv_cmd(message: types.Message):
-    p = get_player(message.from_user.id)
-    if len(p["inventory"]) <= 1 and p["inventory"][0] == 1:
-        text = f'<tg-emoji emoji-id="{ERROR_EMOJI_ID}">🚫</tg-emoji> <b>У вас нету ничего в инвентаре!</b>'
-    else:
-        text = f'<tg-emoji emoji-id="{INVENTORY_ID}">🎒</tg-emoji> <b>Инвентарь:</b>\n'
-        for lvl in sorted(p["inventory"]):
-            status = " (Экипировано)" if lvl == p["pick_lvl"] else ""
-            text += f"• {SHOP_PICKS[lvl]['name']}{status}\n"
-    await message.answer(text, parse_mode="HTML")
-
-@dp_main.message(Command("top"))
-async def top_cmd(message: types.Message):
-    top = db_query("SELECT username, balance, user_id FROM players ORDER BY balance DESC LIMIT 10", fetchall=True)
-    text = "<b>🏆 Топ богачей:</b>\n\n"
-    for i, user in enumerate(top, 1):
-        name = user[0] if user[0] else f"Игрок {user[2]}"
-        text += f"{i}. <b>{name}</b> — {user[1]}💰\n"
-    await message.answer(text, parse_mode="HTML")
-
 @dp_main.message(Command("bonus"))
 async def bonus_cmd(message: types.Message):
     p = get_player(message.from_user.id)
@@ -250,22 +267,15 @@ async def bonus_cmd(message: types.Message):
 async def promo_cmd(message: types.Message, command: CommandObject):
     if not command.args: 
         return await message.reply(f'<tg-emoji emoji-id="{NOTEBOOK_ID}">📓</tg-emoji> <b>Напишите промокод в чат!</b>\nПример: <code>/promo СТАРТ</code>', parse_mode="HTML")
-    
     code = command.args.upper().strip()
     promo = db_query("SELECT reward FROM promo_codes WHERE code = ?", (code,), fetchone=True)
     if promo:
         p = get_player(message.from_user.id)
         if code in p["used_promos"]: 
             return await message.reply(f'<tg-emoji emoji-id="{ERROR_EMOJI_ID}">🚫</tg-emoji> <b>Этот промокод уже был активирован!</b>', parse_mode="HTML")
-        
         p["used_promos"].append(code)
         db_query("UPDATE players SET balance = balance + ?, used_promos = ? WHERE user_id = ?", (promo[0], ",".join(p["used_promos"]), message.from_user.id), commit=True)
-        
-        await message.reply(
-            f'<tg-emoji emoji-id="{CHECK_MARK_ID}">✅</tg-emoji> <b>Промокод успешно активирован!</b>\n'
-            f'<tg-emoji emoji-id="{MONEY_BAG_ID}">💰</tg-emoji> Вам начислено: <b>{promo[0]}</b> монет.', 
-            parse_mode="HTML"
-        )
+        await message.reply(f'<tg-emoji emoji-id="{CHECK_MARK_ID}">✅</tg-emoji> <b>Промокод успешно активирован!</b>\n<tg-emoji emoji-id="{MONEY_BAG_ID}">💰</tg-emoji> Вам начислено: <b>{promo[0]}</b> монет.', parse_mode="HTML")
     else: 
         await message.reply(f'<tg-emoji emoji-id="{ERROR_EMOJI_ID}">🚫</tg-emoji> <b>Такого промокода не существует!</b>', parse_mode="HTML")
 
