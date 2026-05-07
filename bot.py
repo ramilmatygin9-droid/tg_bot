@@ -3,6 +3,7 @@ import logging
 import random
 import sqlite3
 import time
+import json
 from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command, CommandObject
@@ -23,11 +24,16 @@ CASH_ID = "5206599371868631162"
 BALANCE_ID = "5924587830675249107"    
 GIFT_ID = "5792071541084659564"       
 SHOP_ICON_ID = "5197269100878907942"
-ERROR_EMOJI_ID = "5240241223632954241"
-MEDAL_1_ID = "5440539497383087970" 
-MEDAL_2_ID = "5447203607294265305" 
-MEDAL_3_ID = "5453902265922376865" 
 INVENTORY_ID = "5431445210141852444"
+
+# Кристаллы (Premium IDs)
+CRYSTALS_DATA = {
+    "Quartz": {"name": "Кварц", "id": "5318933215233212450"},
+    "Emerald": {"name": "Изумруд", "id": "5318925527258524300"},
+    "Ruby": {"name": "Рубин", "id": "5318713437101038573"},
+    "Sapphire": {"name": "Сапфир", "id": "5318790074282875151"},
+    "Diamond": {"name": "Алмаз", "id": "5319020412858825227"}
+}
 
 main_bot = Bot(token=MAIN_TOKEN)
 admin_bot = Bot(token=ADMIN_TOKEN)
@@ -39,9 +45,16 @@ def init_db():
     conn = sqlite3.connect('miner_game.db')
     cur = conn.cursor()
     cur.execute('''CREATE TABLE IF NOT EXISTS players 
-                   (user_id INTEGER PRIMARY KEY, balance INTEGER, pick_lvl INTEGER, used_promos TEXT, username TEXT, last_bonus INTEGER DEFAULT 0, inventory TEXT DEFAULT '1')''')
+                   (user_id INTEGER PRIMARY KEY, balance INTEGER, pick_lvl INTEGER, used_promos TEXT, 
+                    username TEXT, last_bonus INTEGER DEFAULT 0, inventory TEXT DEFAULT '1', 
+                    crystals TEXT DEFAULT '{}')''')
     cur.execute('''CREATE TABLE IF NOT EXISTS promo_codes 
                    (code TEXT PRIMARY KEY, reward INTEGER, expire_at TEXT)''')
+    # Проверка на наличие колонки кристаллов (для старых БД)
+    cur.execute("PRAGMA table_info(players)")
+    cols = [c[1] for c in cur.fetchall()]
+    if 'crystals' not in cols:
+        cur.execute("ALTER TABLE players ADD COLUMN crystals TEXT DEFAULT '{}'")
     conn.commit()
     conn.close()
 
@@ -55,10 +68,10 @@ def db_query(query, params=(), fetchone=False, fetchall=False, commit=False):
     return res
 
 def get_player(user_id, username=None):
-    data = db_query("SELECT balance, pick_lvl, used_promos, last_bonus, inventory FROM players WHERE user_id = ?", (user_id,), fetchone=True)
+    data = db_query("SELECT balance, pick_lvl, used_promos, last_bonus, inventory, crystals FROM players WHERE user_id = ?", (user_id,), fetchone=True)
     if not data:
-        db_query("INSERT INTO players (user_id, balance, pick_lvl, used_promos, username, inventory) VALUES (?, 0, 1, '', ?, '1')", (user_id, username), commit=True)
-        return {"balance": 0, "pick_lvl": 1, "used_promos": [], "last_bonus": 0, "inventory": [1]}
+        db_query("INSERT INTO players (user_id, balance, pick_lvl, used_promos, username, inventory, crystals) VALUES (?, 0, 1, '', ?, '1', '{}')", (user_id, username), commit=True)
+        return {"balance": 0, "pick_lvl": 1, "used_promos": [], "last_bonus": 0, "inventory": [1], "crystals": {}}
     if username:
         db_query("UPDATE players SET username = ? WHERE user_id = ?", (username, user_id), commit=True)
     return {
@@ -66,7 +79,8 @@ def get_player(user_id, username=None):
         "pick_lvl": data[1], 
         "used_promos": data[2].split(",") if data[2] else [], 
         "last_bonus": data[3],
-        "inventory": [int(x) for x in data[4].split(",")] if data[4] else [1]
+        "inventory": [int(x) for x in data[4].split(",")] if data[4] else [1],
+        "crystals": json.loads(data[5])
     }
 
 # --- АДМИН-БОТ ---
@@ -127,14 +141,39 @@ async def main_mine(message: types.Message):
     p = get_player(message.from_user.id)
     wait_time = random.randint(5, 12)
     status_msg = await message.answer(f'<tg-emoji emoji-id="{PICKAXE_ID}">⛏</tg-emoji> <b>Копаем...</b>\n⏳ Осталось: <b>{wait_time}</b> сек.', parse_mode="HTML")
+    
     for s in range(wait_time - 1, -1, -1):
         await asyncio.sleep(1)
         try: await status_msg.edit_text(f'<tg-emoji emoji-id="{PICKAXE_ID}">⛏</tg-emoji> <b>Работа кипит!</b>\n⏳ Осталось: <b>{s}</b> сек.', parse_mode="HTML")
         except: pass
+    
     reward = int(random.randint(200, 700) * SHOP_PICKS[p["pick_lvl"]]["mult"])
+    
+    # Логика кристаллов
+    crystal_text = ""
+    if random.random() < 0.4:  # 40% шанс найти кристалл
+        crystal_key = random.choice(list(CRYSTALS_DATA.keys()))
+        crystal = CRYSTALS_DATA[crystal_key]
+        p["crystals"][crystal_key] = p["crystals"].get(crystal_key, 0) + 1
+        db_query("UPDATE players SET crystals = ? WHERE user_id = ?", (json.dumps(p["crystals"]), message.from_user.id), commit=True)
+        crystal_text = f'\n✨ Находка: <tg-emoji emoji-id="{crystal["id"]}">💎</tg-emoji> <b>{crystal["name"]}</b>'
+
     db_query("UPDATE players SET balance = balance + ? WHERE user_id = ?", (reward, message.from_user.id), commit=True)
     await status_msg.delete()
-    await message.answer(f'<tg-emoji emoji-id="{MONEY_BAG_ID}">💰</tg-emoji> Найдено: <b>{reward}</b> монет', parse_mode="HTML")
+    await message.answer(f'<tg-emoji emoji-id="{MONEY_BAG_ID}">💰</tg-emoji> Найдено: <b>{reward}</b> монет{crystal_text}', parse_mode="HTML")
+
+@dp_main.message(Command("crystals"))
+async def crystals_cmd(message: types.Message):
+    p = get_player(message.from_user.id)
+    text = "💎 <b>Ваша коллекция кристаллов:</b>\n\n"
+    if not p["crystals"]:
+        text += "Пока пусто... Копайте больше! ⛏"
+    else:
+        for key, count in p["crystals"].items():
+            if count > 0:
+                c = CRYSTALS_DATA[key]
+                text += f'<tg-emoji emoji-id="{c["id"]}">💎</tg-emoji> {c["name"]}: <b>{count} шт.</b>\n'
+    await message.answer(text, parse_mode="HTML")
 
 @dp_main.message(Command("bonus"))
 async def bonus_cmd(message: types.Message):
@@ -213,6 +252,7 @@ async def main():
     await main_bot.set_my_commands([
         BotCommand(command="/start", description="🏠 Меню"),
         BotCommand(command="/mine", description="⛏ Копать"),
+        BotCommand(command="/crystals", description="💎 Кристаллы"),
         BotCommand(command="/shop", description="🛒 Магазин"),
         BotCommand(command="/inventory", description="🎒 Инвентарь"),
         BotCommand(command="/top", description="🏆 Топ"),
