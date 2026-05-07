@@ -23,6 +23,8 @@ MONEY_BAG_ID = "5206223871467878339"
 BALANCE_ID = "5924587830675249107"    
 GIFT_ID = "5792071541084659564"       
 INVENTORY_ID = "5431445210141852444"
+ERROR_EMOJI_ID = "5240241223632954241" # Эмодзи запрета/ошибки
+NOTEBOOK_ID = "5461019131329402505"    # Блокнот для промо
 
 # Кристаллы (Premium IDs)
 CRYSTALS_DATA = {
@@ -48,13 +50,10 @@ def init_db():
                     crystals TEXT DEFAULT '{}')''')
     cur.execute('''CREATE TABLE IF NOT EXISTS promo_codes 
                    (code TEXT PRIMARY KEY, reward INTEGER, expire_at TEXT)''')
-    
-    # Проверка на наличие колонки кристаллов (если БД уже создана)
     cur.execute("PRAGMA table_info(players)")
     cols = [c[1] for c in cur.fetchall()]
     if 'crystals' not in cols:
         cur.execute("ALTER TABLE players ADD COLUMN crystals TEXT DEFAULT '{}'")
-        
     conn.commit()
     conn.close()
 
@@ -68,10 +67,10 @@ def db_query(query, params=(), fetchone=False, fetchall=False, commit=False):
     return res
 
 def get_player(user_id, username=None):
-    data = db_query("SELECT balance, pick_lvl, used_promos, last_bonus, inventory, crystals FROM players WHERE user_id = ?", (user_id,), fetchone=True)
+    data = db_query("SELECT balance, pick_lvl, used_promos, last_bonus, inventory, crystals, username FROM players WHERE user_id = ?", (user_id,), fetchone=True)
     if not data:
         db_query("INSERT INTO players (user_id, balance, pick_lvl, used_promos, username, inventory, crystals) VALUES (?, 0, 1, '', ?, '1', '{}')", (user_id, username), commit=True)
-        return {"balance": 0, "pick_lvl": 1, "used_promos": [], "last_bonus": 0, "inventory": [1], "crystals": {}}
+        return {"balance": 0, "pick_lvl": 1, "used_promos": [], "last_bonus": 0, "inventory": [1], "crystals": {}, "username": username}
     if username:
         db_query("UPDATE players SET username = ? WHERE user_id = ?", (username, user_id), commit=True)
     return {
@@ -80,7 +79,8 @@ def get_player(user_id, username=None):
         "used_promos": data[2].split(",") if data[2] else [], 
         "last_bonus": data[3],
         "inventory": [int(x) for x in data[4].split(",")] if data[4] else [1],
-        "crystals": json.loads(data[5] if data[5] else "{}")
+        "crystals": json.loads(data[5] if data[5] else "{}"),
+        "username": data[6]
     }
 
 # --- АДМИН-БОТ ---
@@ -128,7 +128,16 @@ SHOP_PICKS = {
 @dp_main.message(Command("start"))
 async def main_start(message: types.Message):
     get_player(message.from_user.id, message.from_user.username)
-    await message.answer(f'<tg-emoji emoji-id="{PICKAXE_ID}">⛏</tg-emoji> <b>Майнер бот запущен!</b>\nКопай ресурсы: /mine', parse_mode="HTML")
+    start_text = (
+        f"<b>─── 〈 <tg-emoji emoji-id='{PICKAXE_ID}'>⛏</tg-emoji> MINER WORLD 〉 ───</b>\n\n"
+        f"👋 Привет, <b>{message.from_user.full_name}</b>!\n"
+        f"Добро пожаловать в захватывающий мир добычи!\n\n"
+        f"🔹 <b>Твоя задача:</b> Копать руду и находить редкие камни.\n"
+        f"🔹 <b>Команда:</b> /mine — начать работу в шахте.\n"
+        f"🔹 <b>Улучшения:</b> /shop — покупай крутые кирки.\n\n"
+        f"<i>Удачи в поисках сокровищ!</i>"
+    )
+    await message.answer(start_text, reply_markup=ReplyKeyboardRemove(), parse_mode="HTML")
 
 @dp_main.message(Command("mine"))
 async def main_mine(message: types.Message):
@@ -143,9 +152,8 @@ async def main_mine(message: types.Message):
         
     reward = int(random.randint(200, 600) * SHOP_PICKS[p["pick_lvl"]]["mult"])
     
-    # Шанс выпадения кристалла
     crystal_msg = ""
-    if random.random() < 0.4: # 40% шанс
+    if random.random() < 0.4:
         c_key = random.choice(list(CRYSTALS_DATA.keys()))
         crystal = CRYSTALS_DATA[c_key]
         p["crystals"][c_key] = p["crystals"].get(c_key, 0) + 1
@@ -161,7 +169,7 @@ async def crystals_cmd(message: types.Message):
     p = get_player(message.from_user.id)
     text = "💎 <b>Ваша коллекция кристаллов:</b>\n\n"
     if not p["crystals"] or sum(p["crystals"].values()) == 0:
-        text += "У вас пока нет кристаллов. Продолжайте копать! ⛏"
+        text = f'<tg-emoji emoji-id="{ERROR_EMOJI_ID}">🚫</tg-emoji> <b>У вас пока нету кристаллов!</b>\nПродолжайте копать в шахте! ⛏'
     else:
         for key, count in p["crystals"].items():
             if count > 0:
@@ -203,10 +211,12 @@ async def inv_cmd(message: types.Message):
 
 @dp_main.message(Command("top"))
 async def top_cmd(message: types.Message):
-    top = db_query("SELECT username, balance FROM players ORDER BY balance DESC LIMIT 10", fetchall=True)
+    # Теперь достаем username напрямую
+    top = db_query("SELECT username, balance, user_id FROM players ORDER BY balance DESC LIMIT 10", fetchall=True)
     text = "<b>🏆 Топ богачей:</b>\n\n"
     for i, user in enumerate(top, 1):
-        text += f"{i}. {user[0] if user[0] else 'Аноним'} — {user[1]}💰\n"
+        name = user[0] if user[0] else f"Игрок {user[2]}"
+        text += f"{i}. <b>{name}</b> — {user[1]}💰\n"
     await message.answer(text, parse_mode="HTML")
 
 @dp_main.message(Command("bonus"))
@@ -218,11 +228,13 @@ async def bonus_cmd(message: types.Message):
         await message.answer(f"⏳ Бонус будет доступен через {rem//3600}ч. {(rem%3600)//60}м.")
         return
     db_query("UPDATE players SET balance = balance + 1000, last_bonus = ? WHERE user_id = ?", (now, message.from_user.id), commit=True)
-    await message.answer(f'<tg-emoji emoji-id="{GIFT_ID}">🎁</tg-emoji> Вы получили 1000 монет!')
+    await message.answer(f'<tg-emoji emoji-id="{GIFT_ID}">🎁</tg-emoji> <b>Вы открыли Премиум бокс!</b>\nПолучено: 1000 монет!')
 
 @dp_main.message(Command("promo"))
 async def promo_cmd(message: types.Message, command: CommandObject):
-    if not command.args: return await message.reply("Напиши: /promo КОД")
+    if not command.args: 
+        return await message.reply(f'<tg-emoji emoji-id="{NOTEBOOK_ID}">📓</tg-emoji> <b>Напишите промокод в чат!</b>\nПример: <code>/promo СТАРТ</code>', parse_mode="HTML")
+    
     code = command.args.upper().strip()
     promo = db_query("SELECT reward FROM promo_codes WHERE code = ?", (code,), fetchone=True)
     if promo:
@@ -243,7 +255,7 @@ async def main():
         BotCommand(command="/balance", description="Баланс"),
         BotCommand(command="/inventory", description="Инвентарь"),
         BotCommand(command="/top", description="Топ"),
-        BotCommand(command="/bonus", description="Бонус"),
+        BotCommand(command="/bonus", description="Премиум бокс"),
         BotCommand(command="/promo", description="Промокод")
     ], scope=BotCommandScopeDefault())
     await asyncio.gather(dp_main.start_polling(main_bot), dp_admin.start_polling(admin_bot))
