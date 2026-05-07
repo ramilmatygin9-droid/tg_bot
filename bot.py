@@ -25,7 +25,7 @@ GIFT_ID = "5792071541084659564"
 INVENTORY_ID = "5431445210141852444"
 ERROR_EMOJI_ID = "5240241223632954241" 
 NOTEBOOK_ID = "5461019131329402505"    
-CHECK_MARK_ID = "5316939641503365999" # Новая галочка из скриншота
+CHECK_MARK_ID = "5316939641503365999"
 
 # Кристаллы (Premium IDs)
 CRYSTALS_DATA = {
@@ -204,10 +204,13 @@ async def bal_cmd(message: types.Message):
 @dp_main.message(Command("inventory"))
 async def inv_cmd(message: types.Message):
     p = get_player(message.from_user.id)
-    text = f'<tg-emoji emoji-id="{INVENTORY_ID}">🎒</tg-emoji> <b>Инвентарь:</b>\n'
-    for lvl in sorted(p["inventory"]):
-        status = " (Экипировано)" if lvl == p["pick_lvl"] else ""
-        text += f"• {SHOP_PICKS[lvl]['name']}{status}\n"
+    if len(p["inventory"]) <= 1 and p["inventory"][0] == 1:
+        text = f'<tg-emoji emoji-id="{ERROR_EMOJI_ID}">🚫</tg-emoji> <b>У вас нету ничего в инвентаре!</b>'
+    else:
+        text = f'<tg-emoji emoji-id="{INVENTORY_ID}">🎒</tg-emoji> <b>Инвентарь:</b>\n'
+        for lvl in sorted(p["inventory"]):
+            status = " (Экипировано)" if lvl == p["pick_lvl"] else ""
+            text += f"• {SHOP_PICKS[lvl]['name']}{status}\n"
     await message.answer(text, parse_mode="HTML")
 
 @dp_main.message(Command("top"))
@@ -225,10 +228,10 @@ async def bonus_cmd(message: types.Message):
     now = int(time.time())
     if now - p["last_bonus"] < 86400:
         rem = 86400 - (now - p["last_bonus"])
-        await message.answer(f"⏳ Бонус будет доступен через {rem//3600}ч. {(rem%3600)//60}м.")
+        await message.answer(f'<tg-emoji emoji-id="{ERROR_EMOJI_ID}">🚫</tg-emoji> Ежедневный подарок будет доступен через {rem//3600}ч. {(rem%3600)//60}м.', parse_mode="HTML")
         return
     db_query("UPDATE players SET balance = balance + 1000, last_bonus = ? WHERE user_id = ?", (now, message.from_user.id), commit=True)
-    await message.answer(f'<tg-emoji emoji-id="{GIFT_ID}">🎁</tg-emoji> <b>Вы открыли Премиум бокс!</b>\nПолучено: 1000 монет!')
+    await message.answer(f'<tg-emoji emoji-id="{GIFT_ID}">🎁</tg-emoji> <b>Ежедневный подарок получен!</b>\n\nВам начислено: <b>1000 монет</b>! 💰', parse_mode="HTML")
 
 @dp_main.message(Command("promo"))
 async def promo_cmd(message: types.Message, command: CommandObject):
@@ -240,19 +243,18 @@ async def promo_cmd(message: types.Message, command: CommandObject):
     if promo:
         p = get_player(message.from_user.id)
         if code in p["used_promos"]: 
-            return await message.reply(f'<tg-emoji emoji-id="{ERROR_EMOJI_ID}">🚫</tg-emoji> <b>Этот промокод уже был активирован!</b>')
+            return await message.reply(f'<tg-emoji emoji-id="{ERROR_EMOJI_ID}">🚫</tg-emoji> <b>Этот промокод уже был активирован!</b>', parse_mode="HTML")
         
         p["used_promos"].append(code)
         db_query("UPDATE players SET balance = balance + ?, used_promos = ? WHERE user_id = ?", (promo[0], ",".join(p["used_promos"]), message.from_user.id), commit=True)
         
-        # Успешная активация с новой галочкой
         await message.reply(
             f'<tg-emoji emoji-id="{CHECK_MARK_ID}">✅</tg-emoji> <b>Промокод успешно активирован!</b>\n'
             f'💰 Вам начислено: <b>{promo[0]}</b> монет.', 
             parse_mode="HTML"
         )
     else: 
-        await message.reply(f'<tg-emoji emoji-id="{ERROR_EMOJI_ID}">🚫</tg-emoji> <b>Такого промокода не существует!</b>')
+        await message.reply(f'<tg-emoji emoji-id="{ERROR_EMOJI_ID}">🚫</tg-emoji> <b>Такого промокода не существует!</b>', parse_mode="HTML")
 
 async def main():
     init_db()
@@ -264,7 +266,7 @@ async def main():
         BotCommand(command="/balance", description="Баланс"),
         BotCommand(command="/inventory", description="Инвентарь"),
         BotCommand(command="/top", description="Топ"),
-        BotCommand(command="/bonus", description="Премиум бокс"),
+        BotCommand(command="/bonus", description="Ежедневный подарок"),
         BotCommand(command="/promo", description="Промокод")
     ], scope=BotCommandScopeDefault())
     await asyncio.gather(dp_main.start_polling(main_bot), dp_admin.start_polling(admin_bot))
