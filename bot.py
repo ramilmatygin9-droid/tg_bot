@@ -7,7 +7,7 @@ import re
 from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.types import BotCommand, BotCommandScopeDefault, ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import BotCommand, InlineKeyboardMarkup, InlineKeyboardButton
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -83,7 +83,7 @@ def get_player(user_id, username=None):
         "last_bonus": data[3], "common": data[4], "uncommon": data[5], "rare": data[6]
     }
 
-# --- НОВЫЕ КОМАНДЫ (ОБРАБОТЧИКИ) ---
+# --- ОБРАБОТЧИКИ КОМАНД ---
 
 @dp_main.message(Command("start"))
 async def old_start(message: types.Message):
@@ -104,8 +104,7 @@ async def main_mine(message: types.Message):
         await asyncio.sleep(1)
         try:
             await status_msg.edit_text(f'<tg-emoji emoji-id="{PICKAXE_ID}">⛏</tg-emoji> <b>Работа кипит!</b>\n⏳ Осталось: <b>{s}</b> сек.', parse_mode="HTML")
-        except:
-            pass
+        except: pass
     
     luck = random.random()
     diamond_text = ""
@@ -121,9 +120,27 @@ async def main_mine(message: types.Message):
 
     reward = int(random.randint(200, 700) * SHOP_PICKS[p["pick_lvl"]]["mult"])
     db_query("UPDATE players SET balance = balance + ? WHERE user_id = ?", (reward, message.chat.id), commit=True)
-    
     await status_msg.delete()
     await message.answer(f'<tg-emoji emoji-id="{MONEY_BAG_ID}">💰</tg-emoji> Добыто: <b>{reward}</b> монет{diamond_text}', parse_mode="HTML")
+
+@dp_main.message(Command("inventory"))
+async def inventory_cmd(message: types.Message):
+    p = get_player(message.chat.id)
+    text = (f"🎒 <b>Твой инвентарь:</b>\n\n"
+            f"<tg-emoji emoji-id='{DIAMOND_COMMON}'>💎</tg-emoji> Обычные: <b>{p['common']}</b> шт.\n"
+            f"<tg-emoji emoji-id='{DIAMOND_UNCOMMON}'>💎</tg-emoji> Полуредкие: <b>{p['uncommon']}</b> шт.\n"
+            f"<tg-emoji emoji-id='{DIAMOND_RARE}'>💎</tg-emoji> Редкие: <b>{p['rare']}</b> шт.")
+    await message.answer(text, parse_mode="HTML")
+
+@dp_main.message(Command("sale"))
+async def sale_cmd(message: types.Message):
+    p = get_player(message.chat.id)
+    total = (p['common'] * 1000) + (p['uncommon'] * 5000) + (p['rare'] * 15000)
+    if total == 0:
+        await message.answer(f"<tg-emoji emoji-id='{SKUPSHIK_ID}'>🤓</tg-emoji> У тебя нет алмазов на продажу!")
+        return
+    db_query("UPDATE players SET balance = balance + ?, count_common=0, count_uncommon=0, count_rare=0 WHERE user_id = ?", (total, message.chat.id), commit=True)
+    await message.answer(f"<tg-emoji emoji-id='{SKUPSHIK_ID}'>🤓</tg-emoji> Продано за <b>{total:,}</b> монет!", parse_mode="HTML")
 
 @dp_main.message(Command("shop"))
 async def shop_cmd(message: types.Message):
@@ -145,7 +162,7 @@ async def bonus_cmd(message: types.Message):
     now = int(time.time())
     if now - p["last_bonus"] < 86400:
         rem = 86400 - (now - p["last_bonus"])
-        await message.answer(f"⏳ Бонус будет доступен через <b>{rem//3600}ч. {(rem%3600)//60}м.</b>", parse_mode="HTML")
+        await message.answer(f"⏳ Бонус будет через <b>{rem//3600}ч. {(rem%3600)//60}м.</b>", parse_mode="HTML")
         return
     gift = random.randint(500, 2500)
     db_query("UPDATE players SET balance = balance + ?, last_bonus = ? WHERE user_id = ?", (gift, now, message.chat.id), commit=True)
@@ -155,25 +172,6 @@ async def bonus_cmd(message: types.Message):
 async def bal_cmd(message: types.Message):
     p = get_player(message.chat.id)
     await message.answer(f'<tg-emoji emoji-id="{BALANCE_ID}">💳</tg-emoji> Баланс: <b>{p["balance"]:,}</b>', parse_mode="HTML")
-
-@dp_main.message(Command("Sale"))
-async def sale_cmd(message: types.Message):
-    p = get_player(message.chat.id)
-    total = (p['common'] * 1000) + (p['uncommon'] * 5000) + (p['rare'] * 15000)
-    if total == 0:
-        await message.answer(f"<tg-emoji emoji-id='{SKUPSHIK_ID}'>🤓</tg-emoji> У тебя нет алмазов на продажу!")
-        return
-    db_query("UPDATE players SET balance = balance + ?, count_common=0, count_uncommon=0, count_rare=0 WHERE user_id = ?", (total, message.chat.id), commit=True)
-    await message.answer(f"<tg-emoji emoji-id='{SKUPSHIK_ID}'>🤓</tg-emoji> Продано за <b>{total:,}</b> монет!", parse_mode="HTML")
-
-@dp_main.message(Command("Inventory"))
-async def inventory_cmd(message: types.Message):
-    p = get_player(message.chat.id)
-    text = (f"🎒 <b>Твой инвентарь:</b>\n\n"
-            f"<tg-emoji emoji-id='{DIAMOND_COMMON}'>💎</tg-emoji> Обычные: <b>{p['common']}</b> шт.\n"
-            f"<tg-emoji emoji-id='{DIAMOND_UNCOMMON}'>💎</tg-emoji> Полуредкие: <b>{p['uncommon']}</b> шт.\n"
-            f"<tg-emoji emoji-id='{DIAMOND_RARE}'>💎</tg-emoji> Редкие: <b>{p['rare']}</b> шт.")
-    await message.answer(text, parse_mode="HTML")
 
 @dp_main.message(Command("menu"))
 async def main_menu(message: types.Message):
@@ -189,11 +187,7 @@ async def main_menu(message: types.Message):
         ],
         [InlineKeyboardButton(text="💳 Баланс", callback_data="bal_action")]
     ]
-    await message.answer(
-        f'<tg-emoji emoji-id="{PICKAXE_ID}">⛏</tg-emoji> <b>Главное меню</b>',
-        reply_markup=InlineKeyboardMarkup(inline_keyboard=kb),
-        parse_mode="HTML"
-    )
+    await message.answer(f'<tg-emoji emoji-id="{PICKAXE_ID}">⛏</tg-emoji> <b>Главное меню</b>', reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode="HTML")
 
 # --- CALLBACKS ---
 @dp_main.callback_query(F.data.endswith("_action"))
@@ -219,7 +213,6 @@ async def buy_h(c: types.CallbackQuery):
 # --- ЗАПУСК ---
 async def main():
     init_db()
-    # Установка списка команд в кнопке "Меню"
     await main_bot.set_my_commands([
         BotCommand(command="mine", description="⛏ Копать"),
         BotCommand(command="shop", description="🛒 Магазин"),
