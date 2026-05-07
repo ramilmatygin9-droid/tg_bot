@@ -23,8 +23,9 @@ MONEY_BAG_ID = "5206223871467878339"
 BALANCE_ID = "5924587830675249107"    
 GIFT_ID = "5792071541084659564"       
 INVENTORY_ID = "5431445210141852444"
-ERROR_EMOJI_ID = "5240241223632954241" # Эмодзи запрета/ошибки
-NOTEBOOK_ID = "5461019131329402505"    # Блокнот для промо
+ERROR_EMOJI_ID = "5240241223632954241" 
+NOTEBOOK_ID = "5461019131329402505"    
+CHECK_MARK_ID = "5316939641503365999" # Новая галочка из скриншота
 
 # Кристаллы (Premium IDs)
 CRYSTALS_DATA = {
@@ -211,7 +212,6 @@ async def inv_cmd(message: types.Message):
 
 @dp_main.message(Command("top"))
 async def top_cmd(message: types.Message):
-    # Теперь достаем username напрямую
     top = db_query("SELECT username, balance, user_id FROM players ORDER BY balance DESC LIMIT 10", fetchall=True)
     text = "<b>🏆 Топ богачей:</b>\n\n"
     for i, user in enumerate(top, 1):
@@ -239,11 +239,20 @@ async def promo_cmd(message: types.Message, command: CommandObject):
     promo = db_query("SELECT reward FROM promo_codes WHERE code = ?", (code,), fetchone=True)
     if promo:
         p = get_player(message.from_user.id)
-        if code in p["used_promos"]: return await message.reply("Уже использовано!")
+        if code in p["used_promos"]: 
+            return await message.reply(f'<tg-emoji emoji-id="{ERROR_EMOJI_ID}">🚫</tg-emoji> <b>Этот промокод уже был активирован!</b>')
+        
         p["used_promos"].append(code)
         db_query("UPDATE players SET balance = balance + ?, used_promos = ? WHERE user_id = ?", (promo[0], ",".join(p["used_promos"]), message.from_user.id), commit=True)
-        await message.reply(f"✅ Активировано! +{promo[0]} монет.")
-    else: await message.reply("Код не найден.")
+        
+        # Успешная активация с новой галочкой
+        await message.reply(
+            f'<tg-emoji emoji-id="{CHECK_MARK_ID}">✅</tg-emoji> <b>Промокод успешно активирован!</b>\n'
+            f'💰 Вам начислено: <b>{promo[0]}</b> монет.', 
+            parse_mode="HTML"
+        )
+    else: 
+        await message.reply(f'<tg-emoji emoji-id="{ERROR_EMOJI_ID}">🚫</tg-emoji> <b>Такого промокода не существует!</b>')
 
 async def main():
     init_db()
