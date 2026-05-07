@@ -4,7 +4,7 @@ import random
 import sqlite3
 import time
 from aiogram import Bot, Dispatcher, types, F
-from aiogram.filters import Command
+from aiogram.filters import Command, CommandObject
 from aiogram.types import BotCommand, InlineKeyboardMarkup, InlineKeyboardButton
 
 # Настройка логирования
@@ -12,7 +12,6 @@ logging.basicConfig(level=logging.INFO)
 
 # --- КОНФИГУРАЦИЯ ---
 MAIN_TOKEN = "8156857401:AAF9qTQLD1GbAXgef_IjX7f2glkLofVH0Wk"
-ADMIN_TOKEN = "8359920618:AAE4fi9nt5rZCihjYNuhVZxzEuvwPKjiDbk" 
 OWNER_ID = 8462392581 
 
 # Эмодзи и Кастомные ID
@@ -31,6 +30,13 @@ DIAMOND_RARE = "6269242583763913842"
 CUP_GOLD = "5318821943825154339"
 CUP_SILVER = "5318991475512453472"
 CUP_BRONZE = "5319114256245863261"
+
+# --- ПРОМОКОДЫ ---
+PROMO_CODES = {
+    "START": 5000,
+    "MINER2024": 15000,
+    "GIFT": 10000
+}
 
 # ЦЕНЫ НА КИРКИ
 SHOP_PICKS = {
@@ -80,7 +86,8 @@ def get_player(user_id, username=None):
         db_query("UPDATE players SET username = ? WHERE user_id = ?", (username, user_id), commit=True)
         
     return {
-        "balance": data[0], "pick_lvl": data[1], "used_promos": data[2].split(",") if data[2] else [], 
+        "balance": data[0], "pick_lvl": data[1], 
+        "used_promos": data[2].split(",") if data[2] else [], 
         "last_bonus": data[3], "common": data[4], "uncommon": data[5], "rare": data[6]
     }
 
@@ -107,6 +114,25 @@ async def cmd_start(message: types.Message):
         f"⛏ Копай через /mine и стань лучшим!"
     )
     await message.answer(welcome_text, parse_mode="HTML")
+
+@dp_main.message(Command("promo"))
+async def cmd_promo(message: types.Message, command: CommandObject):
+    if not command.args:
+        return await message.answer("Введите промокод: <code>/promo СТАРТ</code>", parse_mode="HTML")
+    
+    code = command.args.upper()
+    p = get_player(message.from_user.id)
+    
+    if code in p["used_promos"]:
+        return await message.answer("❌ Вы уже использовали этот промокод!")
+    
+    if code in PROMO_CODES:
+        reward = PROMO_CODES[code]
+        new_used = ",".join(p["used_promos"] + [code]) if p["used_promos"] else code
+        db_query("UPDATE players SET balance = balance + ?, used_promos = ? WHERE user_id = ?", (reward, new_used, message.from_user.id), commit=True)
+        await message.answer(f"✅ Промокод активирован!\nНачислено: <b>{reward:,}</b> монет", parse_mode="HTML")
+    else:
+        await message.answer("❌ Такого промокода не существует!")
 
 @dp_main.message(Command("mine"))
 async def cmd_mine(message: types.Message):
@@ -207,9 +233,7 @@ async def buy_h(c: types.CallbackQuery):
 # --- ЗАПУСК ---
 async def main():
     init_db()
-    # КРИТИЧЕСКИ ВАЖНО: удаляем вебхуки и старые апдейты
     await main_bot.delete_webhook(drop_pending_updates=True)
-    
     await main_bot.set_my_commands([
         BotCommand(command="start", description="🏠 Главная"),
         BotCommand(command="mine", description="⛏ Копать"),
@@ -218,13 +242,10 @@ async def main():
         BotCommand(command="bonus", description="🎁 Бонус"),
         BotCommand(command="balance", description="💰 Баланс"),
         BotCommand(command="sale", description="💎 Скупщик"),
-        BotCommand(command="inventory", description="🎒 Инвентарь")
+        BotCommand(command="inventory", description="🎒 Инвентарь"),
+        BotCommand(command="promo", description="🎟 Активировать промокод")
     ])
-    logging.info("СТАРТ БОТА...")
     await dp_main.start_polling(main_bot)
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        pass
+    asyncio.run(main())
