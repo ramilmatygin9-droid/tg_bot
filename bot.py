@@ -3,15 +3,14 @@ import logging
 import random
 import sqlite3
 import time
+from datetime import datetime
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command, CommandObject
 from aiogram.types import BotCommand, InlineKeyboardMarkup, InlineKeyboardButton
 
-# Настройка логирования
-logging.basicConfig(level=logging.INFO)
-
 # --- КОНФИГУРАЦИЯ ---
 MAIN_TOKEN = "8156857401:AAF9qTQLD1GbAXgef_IjX7f2glkLofVH0Wk"
+OWNER_ID = 8462392581 
 
 # Эмодзи и Кастомные ID
 PICKAXE_ID = "5197371802136892976"    
@@ -30,12 +29,6 @@ CUP_GOLD = "5318821943825154339"
 CUP_SILVER = "5318991475512453472"
 CUP_BRONZE = "5319114256245863261"
 
-# Промокоды
-PROMO_CODES = {
-    "START": 5000,
-    "MINER2024": 15000
-}
-
 # ЦЕНЫ НА КИРКИ
 SHOP_PICKS = {
     1: {"name": "Деревянная кирка", "price": 0, "mult": 1.0},
@@ -53,15 +46,11 @@ def init_db():
     conn = sqlite3.connect('miner_game.db')
     cur = conn.cursor()
     cur.execute('''CREATE TABLE IF NOT EXISTS players 
-                   (user_id INTEGER PRIMARY KEY, 
-                   balance INTEGER, 
-                   pick_lvl INTEGER, 
-                   used_promos TEXT, 
-                   username TEXT, 
-                   last_bonus INTEGER DEFAULT 0,
-                   count_common INTEGER DEFAULT 0,
-                   count_uncommon INTEGER DEFAULT 0,
-                   count_rare INTEGER DEFAULT 0)''')
+                   (user_id INTEGER PRIMARY KEY, balance INTEGER, pick_lvl INTEGER, 
+                   used_promos TEXT, username TEXT, last_bonus INTEGER DEFAULT 0,
+                   count_common INTEGER DEFAULT 0, count_uncommon INTEGER DEFAULT 0, count_rare INTEGER DEFAULT 0)''')
+    cur.execute('''CREATE TABLE IF NOT EXISTS promocodes 
+                   (code TEXT PRIMARY KEY, reward INTEGER, expire_time INTEGER)''')
     conn.commit()
     conn.close()
 
@@ -79,17 +68,49 @@ def get_player(user_id, username=None):
     if not data:
         db_query("INSERT INTO players (user_id, balance, pick_lvl, used_promos, username, last_bonus) VALUES (?, 0, 1, '', ?, 0)", (user_id, username), commit=True)
         return {"balance": 0, "pick_lvl": 1, "used_promos": [], "last_bonus": 0, "common": 0, "uncommon": 0, "rare": 0}
-    if username:
-        db_query("UPDATE players SET username = ? WHERE user_id = ?", (username, user_id), commit=True)
-    return {
-        "balance": data[0], "pick_lvl": data[1], "used_promos": data[2].split(",") if data[2] else [], 
-        "last_bonus": data[3], "common": data[4], "uncommon": data[5], "rare": data[6]
-    }
+    if username: db_query("UPDATE players SET username = ? WHERE user_id = ?", (username, user_id), commit=True)
+    return {"balance": data[0], "pick_lvl": data[1], "used_promos": data[2].split(",") if data[2] else [], "last_bonus": data[3], "common": data[4], "uncommon": data[5], "rare": data[6]}
 
-# --- ОБРАБОТЧИКИ ---
+# --- ПАНЕЛЬ УПРАВЛЕНИЯ ПРОМОКОДАМИ (АДМИН) ---
+
+@dp_main.message(Command("add"))
+async def admin_add(message: types.Message, command: CommandObject):
+    if message.from_user.id != OWNER_ID: return
+    args = command.args.split() if command.args else []
+    if len(args) < 3: return await message.answer("Команды:\n• /add НАЗВАНИЕ СУММА ЧАСЫ")
+    
+    code, reward, hours = args[0].upper(), int(args[1]), int(args[2])
+    expire = 0 if hours == 0 else int(time.time()) + (hours * 3600)
+    db_query("INSERT OR REPLACE INTO promocodes VALUES (?, ?, ?)", (code, reward, expire), commit=True)
+    
+    time_str = "вечный" if expire == 0 else datetime.fromtimestamp(expire).strftime('%Y-%m-%d %H:%M:%S')
+    await message.answer(f"✅ Код <b>{code}</b> на {reward} монет создан! (До: {time_str})", parse_mode="HTML")
+
+@dp_main.message(Command("del"))
+async def admin_del(message: types.Message, command: CommandObject):
+    if message.from_user.id != OWNER_ID: return
+    if not command.args: return await message.answer("• /del НАЗВАНИЕ")
+    db_query("DELETE FROM promocodes WHERE code = ?", (command.args.upper(),), commit=True)
+    await message.answer(f"❌ Код {command.args.upper()} удален.")
+
+@dp_main.message(Command("list"))
+async def admin_list(message: types.Message):
+    if message.from_user.id != OWNER_ID: return
+    codes = db_query("SELECT code, reward, expire_time FROM promocodes", fetchall=True)
+    if not codes: return await message.answer("Пусто.")
+    res = "📜 <b>Список кодов:</b>\n"
+    for c, r, e in codes:
+        t = "вечный" if e == 0 else datetime.fromtimestamp(e).strftime('%H:%M %d.%m')
+        res += f"• <code>{c}</code> | {r}💰 | До: {t}\n"
+    await message.answer(res, parse_mode="HTML")
+
+# --- ИГРОВЫЕ КОМАНДЫ (СТАРЫЕ ТЕКСТЫ) ---
 
 @dp_main.message(Command("start"))
 async def cmd_start(message: types.Message):
+    if message.from_user.id == OWNER_ID:
+        return await message.answer("🛠 <b>Панель управления промокодами</b>\n\n• /add КОД СУММА ЧАСЫ (0 - вечный)\n• /del КОД - Удалить\n• /list - Все коды", parse_mode="HTML")
+    
     p = get_player(message.from_user.id, message.from_user.username)
     pick = SHOP_PICKS[p["pick_lvl"]]
     
@@ -175,10 +196,15 @@ async def cmd_promo(message: types.Message, command: CommandObject):
     code = command.args.upper()
     p = get_player(message.from_user.id)
     if code in p["used_promos"]: return await message.answer("❌ Вы уже использовали этот промокод!")
-    if code in PROMO_CODES:
-        db_query("UPDATE players SET balance = balance + ?, used_promos = ? WHERE user_id = ?", (PROMO_CODES[code], ",".join(p["used_promos"] + [code]), message.from_user.id), commit=True)
-        await message.answer(f"✅ Промокод активирован!\nНачислено: <b>{PROMO_CODES[code]:,}</b> монет", parse_mode="HTML")
-    else: await message.answer("❌ Такого промокода не существует!")
+    
+    data = db_query("SELECT reward, expire_time FROM promocodes WHERE code = ?", (code,), fetchone=True)
+    if not data: return await message.answer("❌ Такого промокода не существует!")
+    
+    reward, expire = data
+    if expire != 0 and int(time.time()) > expire: return await message.answer("❌ Срок действия промокода истек!")
+    
+    db_query("UPDATE players SET balance = balance + ?, used_promos = ? WHERE user_id = ?", (reward, ",".join(p["used_promos"] + [code]), message.from_user.id), commit=True)
+    await message.answer(f"✅ Промокод активирован!\nНачислено: <b>{reward:,}</b> монет", parse_mode="HTML")
 
 @dp_main.message(Command("bonus"))
 async def cmd_bonus(message: types.Message):
