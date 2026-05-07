@@ -37,7 +37,9 @@ SHOP_PICKS = {
 }
 
 main_bot = Bot(token=MAIN_TOKEN)
+admin_bot = Bot(token=ADMIN_TOKEN)
 dp_main = Dispatcher()
+dp_admin = Dispatcher()
 
 # --- БАЗА ДАННЫХ ---
 def init_db():
@@ -66,39 +68,39 @@ def db_query(query, params=(), fetchone=False, fetchall=False, commit=False):
     return res
 
 def get_player(user_id, username=None):
-    # Достаем данные из БД
     data = db_query("SELECT balance, pick_lvl, used_promos, last_bonus, count_common, count_uncommon, count_rare FROM players WHERE user_id = ?", (user_id,), fetchone=True)
-    
     if not data:
         db_query("INSERT INTO players (user_id, balance, pick_lvl, used_promos, username, last_bonus) VALUES (?, 0, 1, '', ?, 0)", (user_id, username), commit=True)
         return {"balance": 0, "pick_lvl": 1, "used_promos": [], "last_bonus": 0, "common": 0, "uncommon": 0, "rare": 0}
-    
-    # ВАЖНО: Ключи должны называться именно так, как ты их вызываешь в cmd_inventory
     return {
-        "balance": data[0], 
-        "pick_lvl": data[1], 
-        "used_promos": data[2].split(",") if data[2] else [], 
+        "balance": data[0], "pick_lvl": data[1], "used_promos": data[2].split(",") if data[2] else [], 
         "last_bonus": data[3], 
-        "common": data[4],   # Исправлено
-        "uncommon": data[5], # Исправлено
-        "rare": data[6]      # Исправлено
+        "common": data[4],   # Исправлено для работы инвентаря
+        "uncommon": data[5], # Исправлено для работы инвентаря
+        "rare": data[6]      # Исправлено для работы инвентаря
     }
-
 
 # --- ОБРАБОТЧИКИ ---
 
 @dp_main.message(Command("start"))
 async def cmd_start(message: types.Message):
     get_player(message.from_user.id, message.from_user.username)
-    await message.answer(
-        f'<tg-emoji emoji-id="{PICKAXE_ID}">⛏</tg-emoji> Привет, {message.from_user.first_name}! Ты попал в симулятор майнера.\n'
-        f'Используй /mine чтобы начать копать или /menu для навигации!',
-        parse_mode="HTML"
+    welcome_text = (
+        f'<tg-emoji emoji-id="{PICKAXE_ID}">⛏</tg-emoji> Привет, <b>{message.from_user.first_name}</b>! Ты попал в симулятор майнера.\n\n'
+        f'<b>Твои команды:</b>\n'
+        f'⛏ /mine — Копать руду\n'
+        f'🎒 /inventory — Твои ресурсы\n'
+        f'🛒 /shop — Купить кирку\n'
+        f'💳 /balance — Мой счет\n'
+        f'🤓 /sale — Продать алмазы\n'
+        f'🎁 /bonus — Ежедневный подарок\n'
+        f'🏆 /top — Рейтинг игроков'
     )
+    await message.answer(welcome_text, parse_mode="HTML")
 
 @dp_main.message(Command("mine"))
 async def cmd_mine(message: types.Message):
-    p = get_player(message.from_user.id)
+    p = get_player(message.chat.id)
     wait_time = random.randint(5, 12)
     status_msg = await message.answer(f'<tg-emoji emoji-id="{PICKAXE_ID}">⛏</tg-emoji> <b>Копаем...</b>\n⏳ Осталось: <b>{wait_time}</b> сек.', parse_mode="HTML")
     
@@ -111,36 +113,28 @@ async def cmd_mine(message: types.Message):
     luck = random.random()
     diamond_text = ""
     if luck < 0.05:
-        db_query("UPDATE players SET count_rare = count_rare + 1 WHERE user_id = ?", (message.from_user.id,), commit=True)
+        db_query("UPDATE players SET count_rare = count_rare + 1 WHERE user_id = ?", (message.chat.id,), commit=True)
         diamond_text = f'\n<tg-emoji emoji-id="{DIAMOND_RARE}">💎</tg-emoji> <b>Редкий алмаз!</b>'
     elif luck < 0.15:
-        db_query("UPDATE players SET count_uncommon = count_uncommon + 1 WHERE user_id = ?", (message.from_user.id,), commit=True)
+        db_query("UPDATE players SET count_uncommon = count_uncommon + 1 WHERE user_id = ?", (message.chat.id,), commit=True)
         diamond_text = f'\n<tg-emoji emoji-id="{DIAMOND_UNCOMMON}">💎</tg-emoji> <b>Полуредкий алмаз!</b>'
     elif luck < 0.40:
-        db_query("UPDATE players SET count_common = count_common + 1 WHERE user_id = ?", (message.from_user.id,), commit=True)
+        db_query("UPDATE players SET count_common = count_common + 1 WHERE user_id = ?", (message.chat.id,), commit=True)
         diamond_text = f'\n<tg-emoji emoji-id="{DIAMOND_COMMON}">💎</tg-emoji> <b>Обычный алмаз!</b>'
 
     reward = int(random.randint(200, 700) * SHOP_PICKS[p["pick_lvl"]]["mult"])
-    db_query("UPDATE players SET balance = balance + ? WHERE user_id = ?", (reward, message.from_user.id), commit=True)
-    
-    try: await status_msg.delete()
-    except: pass
-    
+    db_query("UPDATE players SET balance = balance + ? WHERE user_id = ?", (reward, message.chat.id), commit=True)
+    await status_msg.delete()
     await message.answer(f'<tg-emoji emoji-id="{MONEY_BAG_ID}">💰</tg-emoji> Добыто: <b>{reward}</b> монет{diamond_text}', parse_mode="HTML")
 
 @dp_main.message(Command("inventory"))
 async def cmd_inventory(message: types.Message):
-    try:
-        p = get_player(message.from_user.id)
-        text = (f"🎒 <b>Твой инвентарь:</b>\n\n"
-                f"<tg-emoji emoji-id='{DIAMOND_COMMON}'>💎</tg-emoji> Обычные: <b>{p['common']}</b> шт.\n"
-                f"<tg-emoji emoji-id='{DIAMOND_UNCOMMON}'>💎</tg-emoji> Полуредкие: <b>{p['uncommon']}</b> шт.\n"
-                f"<tg-emoji emoji-id='{DIAMOND_RARE}'>💎</tg-emoji> Редкие: <b>{p['rare']}</b> шт.")
-        await message.answer(text, parse_mode="HTML")
-    except Exception as e:
-        logging.error(f"Ошибка в inventory: {e}")
-        await message.answer("Произошла ошибка при открытии инвентаря.")
-
+    p = get_player(message.from_user.id)
+    text = (f"🎒 <b>Твой инвентарь:</b>\n\n"
+            f"<tg-emoji emoji-id='{DIAMOND_COMMON}'>💎</tg-emoji> Обычные: <b>{p['common']}</b> шт.\n"
+            f"<tg-emoji emoji-id='{DIAMOND_UNCOMMON}'>💎</tg-emoji> Полуредкие: <b>{p['uncommon']}</b> шт.\n"
+            f"<tg-emoji emoji-id='{DIAMOND_RARE}'>💎</tg-emoji> Редкие: <b>{p['rare']}</b> шт.")
+    await message.answer(text, parse_mode="HTML")
 
 @dp_main.message(Command("sale"))
 async def cmd_sale(message: types.Message):
@@ -155,17 +149,8 @@ async def cmd_sale(message: types.Message):
 @dp_main.message(Command("shop"))
 async def cmd_shop(message: types.Message):
     p = get_player(message.from_user.id)
-    kb = []
-    for k, v in SHOP_PICKS.items():
-        if k > p["pick_lvl"]:
-            kb.append([InlineKeyboardButton(text=f"{v['name']} — {v['price']:,} 💵", callback_data=f"buy_{k}")])
-    
-    if not kb:
-        await message.answer("🛒 У тебя уже самая лучшая кирка!")
-        return
-        
-    await message.answer(f'🛒 <b>Магазин кирок</b>\nТвоя кирка: {SHOP_PICKS[p["pick_lvl"]]["name"]}', 
-                         reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode="HTML")
+    kb = [[InlineKeyboardButton(text=f"{v['name']} — {v['price']:,} 💵", callback_data=f"buy_{k}")] for k, v in SHOP_PICKS.items() if k > p["pick_lvl"]]
+    await message.answer(f'🛒 <b>Магазин кирок</b>', reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode="HTML")
 
 @dp_main.message(Command("top"))
 async def cmd_top(message: types.Message):
@@ -192,34 +177,7 @@ async def cmd_balance(message: types.Message):
     p = get_player(message.from_user.id)
     await message.answer(f'<tg-emoji emoji-id="{BALANCE_ID}">💳</tg-emoji> Баланс: <b>{p["balance"]:,}</b>', parse_mode="HTML")
 
-@dp_main.message(Command("menu"))
-async def cmd_menu(message: types.Message):
-    kb = [
-        [InlineKeyboardButton(text="⛏ Начать копать", callback_data="mine_action")],
-        [
-            InlineKeyboardButton(text="🎒 Инвентарь", callback_data="inv_action"),
-            InlineKeyboardButton(text="🤓 Скупщик", callback_data="sale_action")
-        ],
-        [
-            InlineKeyboardButton(text="🛒 Магазин", callback_data="shop_action"),
-            InlineKeyboardButton(text="🎁 Бонус", callback_data="bonus_action")
-        ],
-        [InlineKeyboardButton(text="💳 Баланс", callback_data="bal_action")]
-    ]
-    await message.answer(f'<tg-emoji emoji-id="{PICKAXE_ID}">⛏</tg-emoji> <b>Главное меню</b>', reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode="HTML")
-
 # --- CALLBACKS ---
-@dp_main.callback_query(F.data.endswith("_action"))
-async def handle_actions(c: types.CallbackQuery):
-    action = c.data.split("_")[0]
-    await c.answer()
-    if action == "mine": await cmd_mine(c.message)
-    elif action == "inv": await cmd_inventory(c.message)
-    elif action == "sale": await cmd_sale(c.message)
-    elif action == "bonus": await cmd_bonus(c.message)
-    elif action == "shop": await cmd_shop(c.message)
-    elif action == "bal": await cmd_balance(c.message)
-
 @dp_main.callback_query(F.data.startswith("buy_"))
 async def buy_h(c: types.CallbackQuery):
     lvl = int(c.data.split("_")[1])
@@ -227,26 +185,22 @@ async def buy_h(c: types.CallbackQuery):
     if p["balance"] >= SHOP_PICKS[lvl]["price"]:
         db_query("UPDATE players SET balance = balance - ?, pick_lvl = ? WHERE user_id = ?", (SHOP_PICKS[lvl]["price"], lvl, c.from_user.id), commit=True)
         await c.message.edit_text(f"✅ Куплено: {SHOP_PICKS[lvl]['name']}!")
-    else: 
-        await c.answer("Недостаточно монет!", show_alert=True)
+    else: await c.answer("Недостаточно монет!", show_alert=True)
 
 # --- ЗАПУСК ---
 async def main():
     init_db()
+    # Установка списка команд
     await main_bot.set_my_commands([
-        BotCommand(command="menu", description="📱 Меню"),
         BotCommand(command="mine", description="⛏ Копать"),
         BotCommand(command="shop", description="🛒 Магазин"),
-        BotCommand(command="inventory", description="🎒 Инвентарь"),
-        BotCommand(command="sale", description="💎 Продать алмазы"),
-        BotCommand(command="balance", description="💰 Баланс"),
         BotCommand(command="top", description="🏆 Топ"),
-        BotCommand(command="bonus", description="🎁 Бонус")
+        BotCommand(command="bonus", description="🎁 Бонус"),
+        BotCommand(command="balance", description="💰 Баланс"),
+        BotCommand(command="sale", description="💎 Скупщик"),
+        BotCommand(command="inventory", description="🎒 Инвентарь")
     ])
     await dp_main.start_polling(main_bot)
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        pass
+    asyncio.run(main())
