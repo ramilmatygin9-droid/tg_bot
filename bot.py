@@ -27,7 +27,6 @@ ERROR_EMOJI_ID = "5240241223632954241"
 NOTEBOOK_ID = "5461019131329402505"    
 CHECK_MARK_ID = "5316939641503365999"
 STAR_TOP_ID = "5472256585323522641" 
-DRILL_ID = "5307733479151121021" # Эмодзи бура
 
 # Медальки для ТОПа
 MEDAL_1_ID = "5440539497383087970"
@@ -88,14 +87,14 @@ def init_db():
     cur.execute('''CREATE TABLE IF NOT EXISTS players 
                     (user_id INTEGER PRIMARY KEY, balance INTEGER, pick_lvl INTEGER, used_promos TEXT, 
                     username TEXT, last_bonus INTEGER DEFAULT 0, inventory TEXT DEFAULT '1', 
-                    crystals TEXT DEFAULT '{}', has_drill INTEGER DEFAULT 0)''') # Добавлена колонка has_drill
+                    crystals TEXT DEFAULT '{}', has_drill INTEGER DEFAULT 0)''')
     cur.execute('''CREATE TABLE IF NOT EXISTS promo_codes 
                     (code TEXT PRIMARY KEY, reward INTEGER, expire_at TEXT)''')
     cur.execute("PRAGMA table_info(players)")
     cols = [c[1] for c in cur.fetchall()]
     if 'crystals' not in cols:
         cur.execute("ALTER TABLE players ADD COLUMN crystals TEXT DEFAULT '{}'")
-    if 'has_drill' not in cols: # Проверка на наличие колонки бура при обновлении
+    if 'has_drill' not in cols:
         cur.execute("ALTER TABLE players ADD COLUMN has_drill INTEGER DEFAULT 0")
     conn.commit()
     conn.close()
@@ -122,10 +121,10 @@ def get_player(user_id, username=None):
         "crystals": json.loads(data[5] if data[5] else "{}"), "username": data[6], "has_drill": data[7]
     }
 
-# --- ФОНОВАЯ РАБОТА БУРА ---
+# --- ФОНОВАЯ ЗАДАЧА БУРА ---
 async def drill_income_task():
     while True:
-        await asyncio.sleep(60) # Начисление каждую минуту
+        await asyncio.sleep(60) # Раз в минуту
         db_query("UPDATE players SET balance = balance + 20 WHERE has_drill = 1", commit=True)
 
 # --- АДМИН-БОТ ---
@@ -181,7 +180,7 @@ async def main_start(message: types.Message):
 async def main_mine(message: types.Message):
     user_id = message.from_user.id
     if user_id in active_miners:
-        return await message.reply(f'<tg-emoji emoji-id="{ERROR_EMOJI_ID}">🚫</tg-emoji> <b>Вы уже находитесь в шахте!</b>\nДождитесь завершения работы.', parse_mode="HTML")
+        return await message.reply(f'<tg-emoji emoji-id="{ERROR_EMOJI_ID}">🚫</tg-emoji> <b>Вы уже находитесь в шахте!</b>', parse_mode="HTML")
     
     active_miners.add(user_id)
     p = get_player(user_id, message.from_user.username)
@@ -210,7 +209,7 @@ async def main_mine(message: types.Message):
         crystal = CRYSTALS_DATA[c_key]
         p["crystals"][c_key] = p["crystals"].get(c_key, 0) + 1
         db_query("UPDATE players SET crystals = ? WHERE user_id = ?", (json.dumps(p["crystals"]), user_id), commit=True)
-        crystal_msg = f'\n✨ Вы нашли кристалл: <tg-emoji emoji-id="{crystal["id"]}">💎</tg-emoji> <b>{crystal["name"]}</b> ({crystal["rarity"]})!'
+        crystal_msg = f'\n✨ Кристалл: <tg-emoji emoji-id="{crystal["id"]}">💎</tg-emoji> <b>{crystal["name"]}</b>!'
 
     db_query("UPDATE players SET balance = balance + ? WHERE user_id = ?", (reward, user_id), commit=True)
     active_miners.remove(user_id)
@@ -220,9 +219,7 @@ async def main_mine(message: types.Message):
 
 @dp_main.message(Command("cases"))
 async def cases_menu(message: types.Message):
-    kb = []
-    for cid, data in CASES_DATA.items():
-        kb.append([InlineKeyboardButton(text=f"{data['name']} | {data['price']}💰", callback_data=f"buycase_{cid}")])
+    kb = [[InlineKeyboardButton(text=f"{data['name']} | {data['price']}💰", callback_data=f"buycase_{cid}")] for cid, data in CASES_DATA.items()]
     await message.answer("🎰 <b>МАГАЗИН КЕЙСОВ</b>", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode="HTML")
 
 @dp_main.callback_query(F.data.startswith("buycase_"))
@@ -233,7 +230,7 @@ async def open_case_callback(c: types.CallbackQuery):
     if p["balance"] < case["price"]: return await c.answer("🚫 Недостаточно монет!", show_alert=True)
     win = random.randint(case["min"], case["max"])
     db_query("UPDATE players SET balance = balance - ? + ? WHERE user_id = ?", (case["price"], win, c.from_user.id), commit=True)
-    await c.message.edit_text(f"🎰 <b>Открытие {case['name']}...</b>\n💰 Твой выигрыш: <b>{win} монет!</b>", parse_mode="HTML")
+    await c.message.edit_text(f"🎰 <b>Открытие {case['name']}...</b>\n💰 Выигрыш: <b>{win} монет!</b>", parse_mode="HTML")
 
 @dp_main.message(Command("sell"))
 async def sell_cmd(message: types.Message):
@@ -249,27 +246,22 @@ async def sell_callback(c: types.CallbackQuery):
         p["crystals"][key] -= 1
         db_query("UPDATE players SET balance = balance + ?, crystals = ? WHERE user_id = ?", (CRYSTALS_DATA[key]["price"], json.dumps(p["crystals"]), c.from_user.id), commit=True)
         await c.answer(f"✅ Продано!")
-        # (Обновление клавиатуры здесь опущено для краткости, оно работает как в оригинале)
     else: await c.answer("🚫 Нет кристалла!", show_alert=True)
 
 @dp_main.message(Command("shop"))
 async def shop_cmd(message: types.Message):
     p = get_player(message.from_user.id)
     kb = [[InlineKeyboardButton(text=f"{v['name']} — {v['price']} 💵", callback_data=f"buy_{k}")] for k, v in SHOP_PICKS.items() if k > p["pick_lvl"]]
-    
-    # Добавляем Бур в магазин
     if p["has_drill"] == 0:
-        kb.append([InlineKeyboardButton(text=f"⚙️ Автоматический бур — 500,000 💵", callback_data="buy_drill")])
-    
+        kb.append([InlineKeyboardButton(text="⚙️ Автоматический бур — 500,000 💵", callback_data="buy_drill")])
     await message.answer(f"🛒 <b>Магазин</b>\nТекущая кирка: {SHOP_PICKS[p['pick_lvl']]['name']}", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb[:11]), parse_mode="HTML")
 
 @dp_main.callback_query(F.data == "buy_drill")
 async def buy_drill_callback(c: types.CallbackQuery):
     p = get_player(c.from_user.id)
-    price = 500000
-    if p["balance"] >= price:
-        db_query("UPDATE players SET balance = balance - ?, has_drill = 1 WHERE user_id = ?", (price, c.from_user.id), commit=True)
-        await c.message.edit_text(f"✅ Вы купили: <b>Автоматический бур</b>!\nТеперь вы получаете 20 монет каждую минуту пассивно!", parse_mode="HTML")
+    if p["balance"] >= 500000:
+        db_query("UPDATE players SET balance = balance - 500000, has_drill = 1 WHERE user_id = ?", (c.from_user.id,), commit=True)
+        await c.message.edit_text("✅ Вы купили: <b>Автоматический бур</b>!\n+20 монет в минуту.")
     else: await c.answer("Недостаточно денег!", show_alert=True)
 
 @dp_main.callback_query(F.data.startswith("buy_"))
@@ -286,42 +278,26 @@ async def buy_callback(c: types.CallbackQuery):
 @dp_main.message(Command("balance"))
 async def bal_cmd(message: types.Message):
     p = get_player(message.from_user.id)
-    drill_status = "\n⚙️ Бур: <b>Активен (+20/мин)</b>" if p["has_drill"] else ""
-    await message.answer(f'<tg-emoji emoji-id="{BALANCE_ID}">💳</tg-emoji> Баланс: <b>{p["balance"]}</b>{drill_status}', parse_mode="HTML")
+    drill = "\n⚙️ Бур: <b>Активен (+20/мин)</b>" if p["has_drill"] else ""
+    await message.answer(f'<tg-emoji emoji-id="{BALANCE_ID}">💳</tg-emoji> Баланс: <b>{p["balance"]}</b>{drill}', parse_mode="HTML")
 
-# (Команды /top, /inventory, /crystals, /bonus, /promo остаются без изменений как в оригинале)
 @dp_main.message(Command("top"))
 async def top_cmd(message: types.Message):
     top = db_query("SELECT username, balance, user_id FROM players ORDER BY balance DESC LIMIT 10", fetchall=True)
-    text = f'<tg-emoji emoji-id="{STAR_TOP_ID}">✨</tg-emoji> <b>Топ богачей:</b>\n\n'
+    text = "🏆 <b>Топ богачей:</b>\n\n"
     for i, user in enumerate(top, 1):
-        display_name = f"@{user[0]}" if user[0] else f"id{user[2]}"
-        if i == 1: prefix = f'<tg-emoji emoji-id="{MEDAL_1_ID}">🥇</tg-emoji>'
-        elif i == 2: prefix = f'<tg-emoji emoji-id="{MEDAL_2_ID}">🥈</tg-emoji>'
-        elif i == 3: prefix = f'<tg-emoji emoji-id="{MEDAL_3_ID}">🥉</tg-emoji>'
-        else: prefix = f"{i}."
-        text += f"{prefix} <b>{display_name}</b> — {user[1]}💰\n"
+        name = f"@{user[0]}" if user[0] else f"id{user[2]}"
+        text += f"{i}. <b>{name}</b> — {user[1]}💰\n"
     await message.answer(text, parse_mode="HTML")
 
 @dp_main.message(Command("inventory"))
 async def inv_cmd(message: types.Message):
     p = get_player(message.from_user.id)
-    text = f'<tg-emoji emoji-id="{INVENTORY_ID}">🎒</tg-emoji> <b>Инвентарь:</b>\n'
+    text = "🎒 <b>Инвентарь:</b>\n"
     for lvl in sorted(p["inventory"]):
-        status = " (Экипировано)" if lvl == p["pick_lvl"] else ""
+        status = " (Экип)" if lvl == p["pick_lvl"] else ""
         text += f"• {SHOP_PICKS[lvl]['name']}{status}\n"
     if p["has_drill"]: text += "• ⚙️ Автоматический бур\n"
-    await message.answer(text, parse_mode="HTML")
-
-@dp_main.message(Command("crystals"))
-async def crystals_cmd(message: types.Message):
-    p = get_player(message.from_user.id)
-    text = "💎 <b>Ваша коллекция кристаллов:</b>\n\n"
-    if not p["crystals"] or sum(p["crystals"].values()) == 0:
-        text = f'<tg-emoji emoji-id="{ERROR_EMOJI_ID}">🚫</tg-emoji> <b>У вас пока нету кристаллов!</b>'
-    else:
-        for key, count in p["crystals"].items():
-            if count > 0: text += f'💎 {CRYSTALS_DATA[key]["name"]}: <b>{count}</b> шт.\n'
     await message.answer(text, parse_mode="HTML")
 
 @dp_main.message(Command("bonus"))
@@ -329,8 +305,7 @@ async def bonus_cmd(message: types.Message):
     p = get_player(message.from_user.id)
     now = int(time.time())
     if now - p["last_bonus"] < 86400:
-        rem = 86400 - (now - p["last_bonus"])
-        await message.answer(f"🚫 Доступно через {rem//3600}ч.", parse_mode="HTML")
+        await message.answer("🚫 Бонус уже взят!", parse_mode="HTML")
         return
     db_query("UPDATE players SET balance = balance + 1000, last_bonus = ? WHERE user_id = ?", (now, message.from_user.id), commit=True)
     await message.answer("🎁 Бонус 1000 монет получен!", parse_mode="HTML")
@@ -350,16 +325,13 @@ async def promo_cmd(message: types.Message, command: CommandObject):
 
 async def main():
     init_db()
-    asyncio.create_task(drill_income_task()) # Запуск фонового начисления монет от бура
+    asyncio.create_task(drill_income_task()) # Запуск бура в фоне
     await main_bot.set_my_commands([
         BotCommand(command="/start", description="Главная"),
         BotCommand(command="/mine", description="Копать"),
-        BotCommand(command="/sell", description="Скупщик кристаллов"),
         BotCommand(command="/shop", description="Магазин"),
         BotCommand(command="/balance", description="Баланс"),
-        BotCommand(command="/top", description="Топ"),
-        BotCommand(command="/bonus", description="Бонус"),
-        BotCommand(command="/promo", description="Промокод")
+        BotCommand(command="/top", description="Топ")
     ], scope=BotCommandScopeDefault())
     await asyncio.gather(dp_main.start_polling(main_bot), dp_admin.start_polling(admin_bot))
 
