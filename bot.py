@@ -13,7 +13,7 @@ from aiogram.types import BotCommand, BotCommandScopeDefault, ReplyKeyboardRemov
 logging.basicConfig(level=logging.INFO)
 
 # --- КОНФИГУРАЦИЯ ---
-MAIN_TOKEN = "8156857401:AAF9qTQLD1GbAXgef_IjX7f2glkLofVH0Wk"
+MAIN_TOKEN = "8156857401:AAFkS4GaCYxGEyFyAwgqsqyah-d9PPNHeH0" # ОБНОВЛЕННЫЙ ТОКЕН
 ADMIN_TOKEN = "8359920618:AAE4fi9nt5rZCihjYNuhVZxzEuvwPKjiDbk" 
 OWNER_ID = 8462392581 
 
@@ -26,14 +26,14 @@ INVENTORY_ID = "5431445210141852444"
 ERROR_EMOJI_ID = "5240241223632954241" 
 NOTEBOOK_ID = "5461019131329402505"    
 CHECK_MARK_ID = "5316939641503365999"
-STAR_TOP_ID = "5472256585323522641" # Добавлено новое эмодзи звезды
+STAR_TOP_ID = "5472256585323522641" 
 
 # Медальки для ТОПа
 MEDAL_1_ID = "5440539497383087970"
 MEDAL_2_ID = "5447203607294265305"
 MEDAL_3_ID = "5453902265922376865"
 
-# Кристаллы и цены скупщика (включая премиум из скриншотов)
+# Кристаллы
 CRYSTALS_DATA = {
     "Common": {"name": "Обычный кристалл", "id": "6269242583763913842", "rarity": "Обычный", "price": 1000},
     "Rare": {"name": "Редкий кристалл", "id": "6269061400568532047", "rarity": "Редкий", "price": 2500},
@@ -43,15 +43,40 @@ CRYSTALS_DATA = {
     "Premium3": {"name": "Premium Crystal 3", "id": "62693886404578738", "rarity": "Премиум", "price": 20000}
 }
 
-# --- ДАННЫЕ КЕЙСОВ ---
+# --- ОБНОВЛЕННЫЕ КЕЙСЫ ---
 CASES_DATA = {
-    "common": {"name": "📦 Обычный кейс", "price": 5000, "min": 1000, "max": 10000},
-    "rare": {"name": "🎁 Редкий кейс", "price": 25000, "min": 10000, "max": 50000},
-    "mythic": {"name": "💎 Мифический кейс", "price": 100000, "min": 50000, "max": 250000}
+    "wood": {"name": "📦 Деревянный кейс", "price": 5000, "min": 1000, "max": 12000},
+    "iron": {"name": "🎁 Железный кейс", "price": 25000, "min": 5000, "max": 60000},
+    "gold": {"name": "💎 Золотой кейс", "price": 100000, "min": 25000, "max": 250000},
+    "diamond": {"name": "💠 Алмазный кейс", "price": 500000, "min": 150000, "max": 1200000},
+    "mythic": {"name": "🔮 Мифический кейс", "price": 2000000, "min": 800000, "max": 5000000},
+    "godly": {"name": "⚡ БОЖЕСТВЕННЫЙ КЕЙС", "price": 10000000, "min": 5000000, "max": 30000000}
+}
+
+# --- ОБНОВЛЕННЫЙ МАГАЗИН КИРОК ---
+SHOP_PICKS = {
+    1: {"name": "Деревянная кирка", "price": 0, "mult": 1.0},
+    2: {"name": "Каменная кирка", "price": 5000, "mult": 1.5},
+    3: {"name": "Железная кирка", "price": 15000, "mult": 2.5},
+    4: {"name": "Золотая кирка", "price": 50000, "mult": 5.0},
+    5: {"name": "Алмазная кирка", "price": 150000, "mult": 10.0},
+    6: {"name": "Изумрудная кирка", "price": 350000, "mult": 18.0},
+    7: {"name": "Аметистовая кирка", "price": 800000, "mult": 30.0},
+    8: {"name": "Обсидиановая кирка", "price": 1700000, "mult": 55.0},
+    9: {"name": "Незеритовая кирка", "price": 4000000, "mult": 100.0},
+    10: {"name": "Радужная кирка", "price": 10000000, "mult": 200.0},
+    11: {"name": "Кирка бесконечности", "price": 25000000, "mult": 450.0},
+    12: {"name": "Космическая кирка", "price": 60000000, "mult": 900.0},
+    13: {"name": "Кирка Повелителя", "price": 150000000, "mult": 1800.0},
+    14: {"name": "Теневая кирка", "price": 350000000, "mult": 3500.0},
+    15: {"name": "Кирка Создателя", "price": 800000000, "mult": 7000.0},
+    16: {"name": "ADMIN-PICKAXE", "price": 1500000000, "mult": 15000.0},
+    17: {"name": "🌌 Кирка Пустоты", "price": 3000000000, "mult": 35000.0},
+    18: {"name": "☄️ Кирка Сингулярности", "price": 7000000000, "mult": 80000.0},
+    19: {"name": "🔱 Божественная кирка", "price": 15000000000, "mult": 200000.0}
 }
 
 active_miners = set()
-
 main_bot = Bot(token=MAIN_TOKEN)
 admin_bot = Bot(token=ADMIN_TOKEN)
 dp_main = Dispatcher()
@@ -134,25 +159,6 @@ async def admin_list(message: types.Message):
     await message.answer(text if promos else "Пусто.", parse_mode="HTML")
 
 # --- ИГРОВОЙ БОТ ---
-SHOP_PICKS = {
-    1: {"name": "Деревянная кирка", "price": 0, "mult": 1.0},
-    2: {"name": "Каменная кирка", "price": 5000, "mult": 1.5},
-    3: {"name": "Железная кирка", "price": 15000, "mult": 2.5},
-    4: {"name": "Золотая кирка", "price": 50000, "mult": 5.0},
-    5: {"name": "Алмазная кирка", "price": 150000, "mult": 10.0},
-    6: {"name": "Изумрудная кирка", "price": 300000, "mult": 15.0},
-    7: {"name": "Обсидиановая кирка", "price": 750000, "mult": 25.0},
-    8: {"name": "Незеритовая кирка", "price": 1500000, "mult": 40.0},
-    9: {"name": "Кирка из бедрока", "price": 3000000, "mult": 65.0},
-    10: {"name": "Энергетическая кирка", "price": 7000000, "mult": 100.0},
-    11: {"name": "Кирка Края", "price": 15000000, "mult": 180.0},
-    12: {"name": "Солнечная кирка", "price": 30000000, "mult": 300.0},
-    13: {"name": "Лунная кирка", "price": 75000000, "mult": 500.0},
-    14: {"name": "Кирка Пустоты", "price": 150000000, "mult": 850.0},
-    15: {"name": "Мифическая кирка", "price": 500000000, "mult": 1500.0},
-    16: {"name": "Кирка Бога", "price": 1000000000, "mult": 5000.0}
-}
-
 @dp_main.message(Command("start"))
 async def main_start(message: types.Message):
     get_player(message.from_user.id, message.from_user.username)
@@ -163,7 +169,7 @@ async def main_start(message: types.Message):
         f"🔹 <b>Твоя задача:</b> Копать руду и находить редкие камни.\n"
         f"🔹 <b>Команда:</b> /mine — начать работу в шахте.\n"
         f"🔹 <b>Улучшения:</b> /shop — покупай крутые кирки.\n"
-        f"🔹 <b>Удача:</b> /cases — испытай фортуну в кейсах!\n\n"
+        f"🔹 <b>Удача:</b> /cases — открой сундук с монетами.\n\n"
         f"<i>Удачи в поисках сокровищ!</i>"
     )
     await message.answer(start_text, reply_markup=ReplyKeyboardRemove(), parse_mode="HTML")
@@ -184,17 +190,23 @@ async def main_mine(message: types.Message):
         try: await status_msg.edit_text(f'<tg-emoji emoji-id="{PICKAXE_ID}">⛏</tg-emoji> <b>Работаем в шахте...</b>\n⏳ Осталось: <b>{s}</b> сек.', parse_mode="HTML")
         except: pass
         
-    reward = int(random.randint(200, 600) * SHOP_PICKS[p["pick_lvl"]]["mult"])
-    crystal_msg = ""
+    base_reward = random.randint(200, 600)
     
+    # НОВИНКА: Критическая удача (шанс 10%)
+    is_crit = random.random() < 0.10
+    crit_mult = 2 if is_crit else 1
+    
+    reward = int(base_reward * SHOP_PICKS[p["pick_lvl"]]["mult"] * crit_mult)
+    
+    crystal_msg = ""
     if random.random() < 0.4:
         rand_val = random.random()
-        if rand_val < 0.1: 
-            c_key = "SuperRare"
-        elif rand_val < 0.3: 
-            c_key = "Rare"
-        else: 
-            c_key = "Common"
+        if rand_val < 0.05: c_key = "Premium3"
+        elif rand_val < 0.1: c_key = "Premium2"
+        elif rand_val < 0.15: c_key = "Premium1"
+        elif rand_val < 0.25: c_key = "SuperRare"
+        elif rand_val < 0.5: c_key = "Rare"
+        else: c_key = "Common"
             
         crystal = CRYSTALS_DATA[c_key]
         p["crystals"][c_key] = p["crystals"].get(c_key, 0) + 1
@@ -203,35 +215,34 @@ async def main_mine(message: types.Message):
 
     db_query("UPDATE players SET balance = balance + ? WHERE user_id = ?", (reward, user_id), commit=True)
     active_miners.remove(user_id)
+    
+    crit_text = "<b>⚡ КРИТИЧЕСКАЯ ДОБЫЧА (X2)!</b>\n" if is_crit else ""
     await status_msg.delete()
-    await message.answer(f'<tg-emoji emoji-id="{MONEY_BAG_ID}">💰</tg-emoji> <b>Результат:</b>\n+ {reward} монет{crystal_msg}', parse_mode="HTML")
+    await message.answer(f'<tg-emoji emoji-id="{MONEY_BAG_ID}">💰</tg-emoji> <b>Результат:</b>\n{crit_text}+ {reward} монет{crystal_msg}', parse_mode="HTML")
 
-# --- СИСТЕМА КЕЙСОВ ---
 @dp_main.message(Command("cases"))
-async def cases_cmd(message: types.Message):
-    p = get_player(message.from_user.id)
+async def cases_menu(message: types.Message):
     kb = []
     for cid, data in CASES_DATA.items():
-        kb.append([InlineKeyboardButton(text=f"{data['name']} — {data['price']}💰", callback_data=f"opencase_{cid}")])
+        kb.append([InlineKeyboardButton(text=f"{data['name']} | {data['price']}💰", callback_data=f"buycase_{cid}")])
     
-    await message.answer("🎰 <b>МАГАЗИН КЕЙСОВ</b>\n\nВыбери кейс, чтобы испытать удачу:", 
+    await message.answer("🎰 <b>МАГАЗИН КЕЙСОВ</b>\nОткрывай кейсы и выигрывай монеты!", 
                          reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode="HTML")
 
-@dp_main.callback_query(F.data.startswith("opencase_"))
-async def opencase_callback(c: types.CallbackQuery):
+@dp_main.callback_query(F.data.startswith("buycase_"))
+async def open_case_callback(c: types.CallbackQuery):
     cid = c.data.split("_")[1]
     case = CASES_DATA[cid]
     p = get_player(c.from_user.id)
     
     if p["balance"] < case["price"]:
-        return await c.answer("🚫 У тебя недостаточно монет!", show_alert=True)
+        return await c.answer("🚫 Недостаточно монет!", show_alert=True)
     
     win = random.randint(case["min"], case["max"])
     db_query("UPDATE players SET balance = balance - ? + ? WHERE user_id = ?", (case["price"], win, c.from_user.id), commit=True)
     
-    await c.message.edit_text(f"🎰 <b>Открытие кейса...</b>\n\nТебе выпало: <b>{win} монет!</b> 💰", parse_mode="HTML")
+    await c.message.edit_text(f"🎰 <b>Открытие {case['name']}...</b>\n\n💰 Твой выигрыш: <b>{win} монет!</b>", parse_mode="HTML")
 
-# --- СИСТЕМА СКУПЩИКА ---
 @dp_main.message(Command("sell"))
 async def sell_cmd(message: types.Message):
     p = get_player(message.from_user.id)
@@ -254,7 +265,6 @@ async def sell_callback(c: types.CallbackQuery):
         db_query("UPDATE players SET balance = balance + ?, crystals = ? WHERE user_id = ?", 
                  (reward, json.dumps(p["crystals"]), c.from_user.id), commit=True)
         
-        # Обновляем клавиатуру
         new_p = get_player(c.from_user.id)
         kb = []
         for k, data in CRYSTALS_DATA.items():
@@ -284,7 +294,7 @@ async def top_cmd(message: types.Message):
     top = db_query("SELECT username, balance, user_id FROM players ORDER BY balance DESC LIMIT 10", fetchall=True)
     text = f'<tg-emoji emoji-id="{STAR_TOP_ID}">✨</tg-emoji> <b>Топ богачей:</b>\n\n'
     for i, user in enumerate(top, 1):
-        display_name = f"@{user[0]}" if user[0] else "Игрок"
+        display_name = f"@{user[0]}" if user[0] else f"id{user[2]}"
         if i == 1: prefix = f'<tg-emoji emoji-id="{MEDAL_1_ID}">🥇</tg-emoji>'
         elif i == 2: prefix = f'<tg-emoji emoji-id="{MEDAL_2_ID}">🥈</tg-emoji>'
         elif i == 3: prefix = f'<tg-emoji emoji-id="{MEDAL_3_ID}">🥉</tg-emoji>'
@@ -295,20 +305,17 @@ async def top_cmd(message: types.Message):
 @dp_main.message(Command("inventory"))
 async def inv_cmd(message: types.Message):
     p = get_player(message.from_user.id)
-    if len(p["inventory"]) <= 1 and p["inventory"][0] == 1:
-        text = f'<tg-emoji emoji-id="{ERROR_EMOJI_ID}">🚫</tg-emoji> <b>У вас нету ничего в инвентаре!</b>'
-    else:
-        text = f'<tg-emoji emoji-id="{INVENTORY_ID}">🎒</tg-emoji> <b>Инвентарь:</b>\n'
-        for lvl in sorted(p["inventory"]):
-            status = " (Экипировано)" if lvl == p["pick_lvl"] else ""
-            text += f"• {SHOP_PICKS[lvl]['name']}{status}\n"
+    text = f'<tg-emoji emoji-id="{INVENTORY_ID}">🎒</tg-emoji> <b>Инвентарь:</b>\n'
+    for lvl in sorted(p["inventory"]):
+        status = " (Экипировано)" if lvl == p["pick_lvl"] else ""
+        text += f"• {SHOP_PICKS[lvl]['name']}{status}\n"
     await message.answer(text, parse_mode="HTML")
 
 @dp_main.message(Command("shop"))
 async def shop_cmd(message: types.Message):
     p = get_player(message.from_user.id)
     kb = [[InlineKeyboardButton(text=f"{v['name']} — {v['price']} 💵", callback_data=f"buy_{k}")] for k, v in SHOP_PICKS.items() if k > p["pick_lvl"]]
-    await message.answer(f"🛒 <b>Магазин</b>\nТекущая кирка: {SHOP_PICKS[p['pick_lvl']]['name']}", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode="HTML")
+    await message.answer(f"🛒 <b>Магазин</b>\nТекущая кирка: {SHOP_PICKS[p['pick_lvl']]['name']}", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb[:10]), parse_mode="HTML")
 
 @dp_main.callback_query(F.data.startswith("buy_"))
 async def buy_callback(c: types.CallbackQuery):
@@ -361,8 +368,8 @@ async def main():
         BotCommand(command="/mine", description="Копать"),
         BotCommand(command="/sell", description="Скупщик кристаллов"),
         BotCommand(command="/crystals", description="Мои кристаллы"),
-        BotCommand(command="/shop", description="Магазин кирок"),
-        BotCommand(command="/cases", description="Магазин кейсов"),
+        BotCommand(command="/shop", description="Магазин"),
+        BotCommand(command="/cases", description="Сундуки с удачей"),
         BotCommand(command="/balance", description="Баланс"),
         BotCommand(command="/inventory", description="Инвентарь"),
         BotCommand(command="/top", description="Топ"),
