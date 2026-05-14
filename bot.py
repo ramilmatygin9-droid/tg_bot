@@ -33,7 +33,7 @@ MEDAL_1_ID = "5440539497383087970"
 MEDAL_2_ID = "5447203607294265305"
 MEDAL_3_ID = "5453902265922376865"
 
-# Кристаллы
+# Кристаллы (Данные из твоих набросков)
 CRYSTALS_DATA = {
     "Common": {"name": "Обычный кристалл", "id": "6269242583763913842", "rarity": "Обычный", "price": 1000},
     "Rare": {"name": "Редкий кристалл", "id": "6269061400568532047", "rarity": "Редкий", "price": 2500},
@@ -43,24 +43,29 @@ CRYSTALS_DATA = {
     "Premium3": {"name": "Premium Crystal 3", "id": "62693886404578738", "rarity": "Премиум", "price": 20000}
 }
 
-# Настройки кейсов
+# Настройки Кейсов
 CASES_DATA = {
-    "basic": {
+    "common_box": {
         "name": "📦 Обычный кейс",
-        "price": 2500,
+        "price": 3000,
         "items": ["Common", "Rare", "SuperRare"],
+        "weights": [70, 25, 5]
+    },
+    "rare_box": {
+        "name": "💎 Редкий кейс",
+        "price": 12000,
+        "items": ["Rare", "SuperRare", "Premium1"],
         "weights": [60, 30, 10]
     },
-    "premium": {
-        "name": "🎁 Премиум кейс",
-        "price": 10000,
+    "mythic_box": {
+        "name": "🔥 Мифический кейс",
+        "price": 45000,
         "items": ["SuperRare", "Premium1", "Premium2", "Premium3"],
         "weights": [50, 30, 15, 5]
     }
 }
 
 active_miners = set()
-
 main_bot = Bot(token=MAIN_TOKEN)
 admin_bot = Bot(token=ADMIN_TOKEN)
 dp_main = Dispatcher()
@@ -159,9 +164,10 @@ async def main_start(message: types.Message):
         f"👋 Привет, <b>{message.from_user.full_name}</b>!\n"
         f"Добро пожаловать в захватывающий мир добычи!\n\n"
         f"🔹 <b>Твоя задача:</b> Копать руду и находить редкие камни.\n"
-        f"🔹 <b>Команда:</b> /mine — начать работу в шахте.\n"
-        f"🔹 <b>Кейсы:</b> /cases — испытай удачу.\n"
-        f"🔹 <b>Улучшения:</b> /shop — покупай крутые кирки.\n\n"
+        f"🔹 <b>Шахта:</b> /mine\n"
+        f"🔹 <b>Магазин кирки:</b> /shop\n"
+        f"🔹 <b>Магазин КЕЙСОВ:</b> /cases\n"
+        f"🔹 <b>Продать камни:</b> /sell\n\n"
         f"<i>Удачи в поисках сокровищ!</i>"
     )
     await message.answer(start_text, reply_markup=ReplyKeyboardRemove(), parse_mode="HTML")
@@ -170,7 +176,7 @@ async def main_start(message: types.Message):
 async def main_mine(message: types.Message):
     user_id = message.from_user.id
     if user_id in active_miners:
-        return await message.reply(f'<tg-emoji emoji-id="{ERROR_EMOJI_ID}">🚫</tg-emoji> <b>Вы уже находитесь в шахте!</b>\nДождитесь завершения работы.', parse_mode="HTML")
+        return await message.reply(f'<tg-emoji emoji-id="{ERROR_EMOJI_ID}">🚫</tg-emoji> <b>Вы уже в шахте!</b>', parse_mode="HTML")
     
     active_miners.add(user_id)
     p = get_player(user_id, message.from_user.username)
@@ -185,19 +191,12 @@ async def main_mine(message: types.Message):
     reward = int(random.randint(200, 600) * SHOP_PICKS[p["pick_lvl"]]["mult"])
     crystal_msg = ""
     
-    if random.random() < 0.4:
-        rand_val = random.random()
-        if rand_val < 0.1: 
-            c_key = "SuperRare"
-        elif rand_val < 0.3: 
-            c_key = "Rare"
-        else: 
-            c_key = "Common"
-            
+    if random.random() < 0.3:
+        c_key = random.choices(["Common", "Rare", "SuperRare"], weights=[70, 25, 5])[0]
         crystal = CRYSTALS_DATA[c_key]
         p["crystals"][c_key] = p["crystals"].get(c_key, 0) + 1
         db_query("UPDATE players SET crystals = ? WHERE user_id = ?", (json.dumps(p["crystals"]), user_id), commit=True)
-        crystal_msg = f'\n✨ Вы нашли кристалл: <tg-emoji emoji-id="{crystal["id"]}">💎</tg-emoji> <b>{crystal["name"]}</b> ({crystal["rarity"]})!'
+        crystal_msg = f'\n✨ Найден: <tg-emoji emoji-id="{crystal["id"]}">💎</tg-emoji> <b>{crystal["name"]}</b>!'
 
     db_query("UPDATE players SET balance = balance + ? WHERE user_id = ?", (reward, user_id), commit=True)
     active_miners.remove(user_id)
@@ -206,118 +205,128 @@ async def main_mine(message: types.Message):
 
 # --- МАГАЗИН КЕЙСОВ ---
 @dp_main.message(Command("cases"))
-async def cases_cmd(message: types.Message):
+async def cases_menu(message: types.Message):
     kb = []
     for cid, data in CASES_DATA.items():
         kb.append([InlineKeyboardButton(text=f"{data['name']} — {data['price']}💰", callback_data=f"buycase_{cid}")])
     
-    await message.answer("📦 <b>Магазин кейсов</b>\nИспытай свою удачу и получи редчайшие кристаллы!", 
-                         reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode="HTML")
+    await message.answer(
+        "📦 <b>Магазин Кейсов</b>\n\n"
+        "Испытай свою удачу! Из кейсов могут выпасть редчайшие премиум кристаллы.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=kb),
+        parse_mode="HTML"
+    )
 
 @dp_main.callback_query(F.data.startswith("buycase_"))
-async def buy_case_callback(c: types.CallbackQuery):
+async def open_case(c: types.CallbackQuery):
     cid = c.data.split("_")[1]
     case = CASES_DATA[cid]
     p = get_player(c.from_user.id)
     
     if p["balance"] < case["price"]:
-        return await c.answer("🚫 Недостаточно монет!", show_alert=True)
+        return await c.answer("🚫 Недостаточно монет для покупки!", show_alert=True)
     
     # Списание денег
     db_query("UPDATE players SET balance = balance - ? WHERE user_id = ?", (case["price"], c.from_user.id), commit=True)
     
-    # Рандом выпадения
+    # Розыгрыш приза
     win_key = random.choices(case["items"], weights=case["weights"])[0]
     win_item = CRYSTALS_DATA[win_key]
     
-    # Выдача приза
+    # Сохранение
     p["crystals"][win_key] = p["crystals"].get(win_key, 0) + 1
     db_query("UPDATE players SET crystals = ? WHERE user_id = ?", (json.dumps(p["crystals"]), c.from_user.id), commit=True)
     
-    await c.message.answer(f"🎊 <b>Открытие кейса...</b>\n\nВам выпал: <tg-emoji emoji-id='{win_item['id']}'>💎</tg-emoji> <b>{win_item['name']}</b>!", parse_mode="HTML")
-    await c.answer("Кейс открыт!")
+    await c.message.edit_text(
+        f"📦 <b>Открытие кейса...</b>\n"
+        f"──────────────────\n"
+        f"🎉 Вам выпал: <tg-emoji emoji-id='{win_item['id']}'>💎</tg-emoji> <b>{win_item['name']}</b>!\n"
+        f"Редкость: <b>{win_item['rarity']}</b>",
+        parse_mode="HTML"
+    )
 
-# --- СИСТЕМА СКУПЩИКА ---
+# --- СИСТЕМА ПРОДАЖ ---
 @dp_main.message(Command("sell"))
 async def sell_cmd(message: types.Message):
     p = get_player(message.from_user.id)
     kb = []
     for key, data in CRYSTALS_DATA.items():
         count = p["crystals"].get(key, 0)
-        kb.append([InlineKeyboardButton(text=f"💎 {data['name']} ({count} шт) — {data['price']}💰", callback_data=f"sell_{key}")])
+        if count > 0:
+            kb.append([InlineKeyboardButton(text=f"Продать {data['name']} ({count} шт) — {data['price']}💰", callback_data=f"sell_{key}")])
     
-    await message.answer("💎 <b>выбери нужный Кристал для продажи</b> 💎", 
+    if not kb:
+        return await message.answer("У вас нет кристаллов для продажи.")
+        
+    await message.answer("💎 <b>Скупщик кристаллов</b>\nВыберите кристалл для продажи:", 
                          reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode="HTML")
 
 @dp_main.callback_query(F.data.startswith("sell_"))
 async def sell_callback(c: types.CallbackQuery):
     key = c.data.split("_")[1]
     p = get_player(c.from_user.id)
-    
     if p["crystals"].get(key, 0) > 0:
         p["crystals"][key] -= 1
         reward = CRYSTALS_DATA[key]["price"]
         db_query("UPDATE players SET balance = balance + ?, crystals = ? WHERE user_id = ?", 
                  (reward, json.dumps(p["crystals"]), c.from_user.id), commit=True)
-        
-        new_p = get_player(c.from_user.id)
-        kb = []
-        for k, data in CRYSTALS_DATA.items():
-            count = new_p["crystals"].get(k, 0)
-            kb.append([InlineKeyboardButton(text=f"💎 {data['name']} ({count} шт) — {data['price']}💰", callback_data=f"sell_{k}")])
-        
-        await c.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
-        await c.answer(f"✅ Продано: {CRYSTALS_DATA[key]['name']} за {reward}💰")
+        await c.answer(f"✅ Продано за {reward}💰")
+        # Перерисовываем меню
+        await sell_cmd(c.message)
+        await c.message.delete()
     else:
-        await c.answer("🚫 У вас нет этого кристалла!", show_alert=True)
+        await c.answer("Уже нет в наличии!", show_alert=True)
 
+# --- ПРОЧИЕ КОМАНДЫ ---
 @dp_main.message(Command("crystals"))
 async def crystals_cmd(message: types.Message):
     p = get_player(message.from_user.id)
-    text = "💎 <b>Ваша коллекция кристаллов:</b>\n\n"
-    has_any = False
+    text = "💎 <b>Ваши накопления:</b>\n\n"
+    found = False
     for key, count in p["crystals"].items():
         if count > 0:
-            c = CRYSTALS_DATA.get(key)
-            if c:
-                text += f'<tg-emoji emoji-id="{c["id"]}">💎</tg-emoji> {c["name"]}: <b>{count}</b> шт.\n'
-                has_any = True
+            found = True
+            c = CRYSTALS_DATA[key]
+            text += f'<tg-emoji emoji-id="{c["id"]}">💎</tg-emoji> {c["name"]}: <b>{count}</b> шт.\n'
     
-    if not has_any:
-        text = f'<tg-emoji emoji-id="{ERROR_EMOJI_ID}">🚫</tg-emoji> <b>У вас пока нету кристаллов!</b>\nПродолжайте копать в шахте! ⛏'
-        
+    if not found: text = "У вас пока пусто. Отправляйтесь в /mine!"
     await message.answer(text, parse_mode="HTML")
 
 @dp_main.message(Command("top"))
 async def top_cmd(message: types.Message):
-    top = db_query("SELECT username, balance, user_id FROM players ORDER BY balance DESC LIMIT 10", fetchall=True)
-    text = f'<tg-emoji emoji-id="{STAR_TOP_ID}">✨</tg-emoji> <b>Топ богачей:</b>\n\n'
+    top = db_query("SELECT username, balance FROM players ORDER BY balance DESC LIMIT 10", fetchall=True)
+    text = f'<tg-emoji emoji-id="{STAR_TOP_ID}">✨</tg-emoji> <b>ТОП 10 МАЙНЕРОВ:</b>\n\n'
     for i, user in enumerate(top, 1):
-        display_name = f"@{user[0]}" if user[0] else "Игрок"
-        if i == 1: prefix = f'<tg-emoji emoji-id="{MEDAL_1_ID}">🥇</tg-emoji>'
-        elif i == 2: prefix = f'<tg-emoji emoji-id="{MEDAL_2_ID}">🥈</tg-emoji>'
-        elif i == 3: prefix = f'<tg-emoji emoji-id="{MEDAL_3_ID}">🥉</tg-emoji>'
-        else: prefix = f"{i}."
-        text += f"{prefix} <b>{display_name}</b> — {user[1]}💰\n"
+        name = f"@{user[0]}" if user[0] else "Игрок"
+        icon = {1: MEDAL_1_ID, 2: MEDAL_2_ID, 3: MEDAL_3_ID}.get(i, None)
+        prefix = f'<tg-emoji emoji-id="{icon}">🥇</tg-emoji>' if icon else f"{i}."
+        text += f"{prefix} <b>{name}</b> — {user[1]}💰\n"
     await message.answer(text, parse_mode="HTML")
 
-@dp_main.message(Command("inventory"))
-async def inv_cmd(message: types.Message):
+@dp_main.message(Command("balance"))
+async def bal_cmd(message: types.Message):
     p = get_player(message.from_user.id)
-    if len(p["inventory"]) <= 1 and p["inventory"][0] == 1:
-        text = f'<tg-emoji emoji-id="{ERROR_EMOJI_ID}">🚫</tg-emoji> <b>У вас нету ничего в инвентаре!</b>'
-    else:
-        text = f'<tg-emoji emoji-id="{INVENTORY_ID}">🎒</tg-emoji> <b>Инвентарь:</b>\n'
-        for lvl in sorted(p["inventory"]):
-            status = " (Экипировано)" if lvl == p["pick_lvl"] else ""
-            text += f"• {SHOP_PICKS[lvl]['name']}{status}\n"
-    await message.answer(text, parse_mode="HTML")
+    await message.answer(f'<tg-emoji emoji-id="{BALANCE_ID}">💳</tg-emoji> Баланс: <b>{p["balance"]}</b>💰', parse_mode="HTML")
+
+@dp_main.message(Command("bonus"))
+async def bonus_cmd(message: types.Message):
+    p = get_player(message.from_user.id)
+    now = int(time.time())
+    if now - p["last_bonus"] < 86400:
+        rem = 86400 - (now - p["last_bonus"])
+        return await message.answer(f'🚫 Бонус будет доступен через {rem//3600}ч.')
+    db_query("UPDATE players SET balance = balance + 1000, last_bonus = ? WHERE user_id = ?", (now, message.from_user.id), commit=True)
+    await message.answer(f'<tg-emoji emoji-id="{GIFT_ID}">🎁</tg-emoji> <b>Бонус +1000💰 получен!</b>', parse_mode="HTML")
 
 @dp_main.message(Command("shop"))
 async def shop_cmd(message: types.Message):
     p = get_player(message.from_user.id)
-    kb = [[InlineKeyboardButton(text=f"{v['name']} — {v['price']} 💵", callback_data=f"buy_{k}")] for k, v in SHOP_PICKS.items() if k > p["pick_lvl"]]
-    await message.answer(f"🛒 <b>Магазин</b>\nТекущая кирка: {SHOP_PICKS[p['pick_lvl']]['name']}", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode="HTML")
+    kb = [[InlineKeyboardButton(text=f"{v['name']} — {v['price']}💰", callback_data=f"buy_{k}")] 
+          for k, v in SHOP_PICKS.items() if k > p["pick_lvl"]]
+    if not kb:
+        return await message.answer("У вас лучшая кирка!")
+    await message.answer(f"🛒 <b>Магазин</b>\nТекущая кирка: {SHOP_PICKS[p['pick_lvl']]['name']}", 
+                         reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode="HTML")
 
 @dp_main.callback_query(F.data.startswith("buy_"))
 async def buy_callback(c: types.CallbackQuery):
@@ -328,54 +337,34 @@ async def buy_callback(c: types.CallbackQuery):
         if lvl not in inv: inv.append(lvl)
         db_query("UPDATE players SET balance = balance - ?, pick_lvl = ?, inventory = ? WHERE user_id = ?", 
                  (SHOP_PICKS[lvl]["price"], lvl, ",".join(map(str, inv)), c.from_user.id), commit=True)
-        await c.message.edit_text(f"✅ Вы купили: {SHOP_PICKS[lvl]['name']}!")
+        await c.message.edit_text(f"✅ Куплено: {SHOP_PICKS[lvl]['name']}!")
     else: await c.answer("Недостаточно денег!", show_alert=True)
-
-@dp_main.message(Command("balance"))
-async def bal_cmd(message: types.Message):
-    p = get_player(message.from_user.id)
-    await message.answer(f'<tg-emoji emoji-id="{BALANCE_ID}">💳</tg-emoji> Баланс: <b>{p["balance"]}</b>', parse_mode="HTML")
-
-@dp_main.message(Command("bonus"))
-async def bonus_cmd(message: types.Message):
-    p = get_player(message.from_user.id)
-    now = int(time.time())
-    if now - p["last_bonus"] < 86400:
-        rem = 86400 - (now - p["last_bonus"])
-        await message.answer(f'<tg-emoji emoji-id="{ERROR_EMOJI_ID}">🚫</tg-emoji> Ежедневный подарок будет доступен через {rem//3600}ч. {(rem%3600)//60}м.', parse_mode="HTML")
-        return
-    db_query("UPDATE players SET balance = balance + 1000, last_bonus = ? WHERE user_id = ?", (now, message.from_user.id), commit=True)
-    await message.answer(f'<tg-emoji emoji-id="{GIFT_ID}">🎁</tg-emoji> <b>Ежедневный подарок получен!</b>\n\nВам начислено: <b>1000 монет</b>! 💰', parse_mode="HTML")
 
 @dp_main.message(Command("promo"))
 async def promo_cmd(message: types.Message, command: CommandObject):
-    if not command.args: 
-        return await message.reply(f'<tg-emoji emoji-id="{NOTEBOOK_ID}">📓</tg-emoji> <b>Напишите промокод в чат!</b>\nПример: <code>/promo СТАРТ</code>', parse_mode="HTML")
+    if not command.args: return await message.reply("Введите код!")
     code = command.args.upper().strip()
     promo = db_query("SELECT reward FROM promo_codes WHERE code = ?", (code,), fetchone=True)
     if promo:
         p = get_player(message.from_user.id)
-        if code in p["used_promos"]: 
-            return await message.reply(f'<tg-emoji emoji-id="{ERROR_EMOJI_ID}">🚫</tg-emoji> <b>Этот промокод уже был активирован!</b>', parse_mode="HTML")
+        if code in p["used_promos"]: return await message.reply("Уже активирован!")
         p["used_promos"].append(code)
         db_query("UPDATE players SET balance = balance + ?, used_promos = ? WHERE user_id = ?", (promo[0], ",".join(p["used_promos"]), message.from_user.id), commit=True)
-        await message.reply(f'<tg-emoji emoji-id="{CHECK_MARK_ID}">✅</tg-emoji> <b>Промокод успешно активирован!</b>\n<tg-emoji emoji-id="{MONEY_BAG_ID}">💰</tg-emoji> Вам начислено: <b>{promo[0]}</b> монет.', parse_mode="HTML")
-    else: 
-        await message.reply(f'<tg-emoji emoji-id="{ERROR_EMOJI_ID}">🚫</tg-emoji> <b>Такого промокода не существует!</b>', parse_mode="HTML")
+        await message.reply(f"✅ Активировано! +{promo[0]}💰")
+    else: await message.reply("Неверный код.")
 
 async def main():
     init_db()
     await main_bot.set_my_commands([
         BotCommand(command="/start", description="Главная"),
         BotCommand(command="/mine", description="Копать"),
-        BotCommand(command="/cases", description="Магазин кейсов"),
-        BotCommand(command="/sell", description="Скупщик кристаллов"),
-        BotCommand(command="/crystals", description="Мои кристаллы"),
-        BotCommand(command="/shop", description="Магазин"),
-        BotCommand(command="/balance", description="Баланс"),
-        BotCommand(command="/inventory", description="Инвентарь"),
-        BotCommand(command="/top", description="Топ"),
-        BotCommand(command="/bonus", description="Ежедневный подарок"),
+        BotCommand(command="/cases", description="Открыть кейсы"),
+        BotCommand(command="/sell", description="Продать кристаллы"),
+        BotCommand(command="/crystals", description="Коллекция"),
+        BotCommand(command="/shop", description="Магазин кирки"),
+        BotCommand(command="/balance", description="Кошелек"),
+        BotCommand(command="/top", description="Рейтинг"),
+        BotCommand(command="/bonus", description="Подарок"),
         BotCommand(command="/promo", description="Промокод")
     ], scope=BotCommandScopeDefault())
     await asyncio.gather(dp_main.start_polling(main_bot), dp_admin.start_polling(admin_bot))
